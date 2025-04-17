@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [ "lca-lsolver","lca-lsolver", "lca-rs", "ecospold-parser", "ecoinvent-example"]
+
+[workspace.dependencies]
+wgpu = "25.0.0" 
+futures = "0.3"
+wasm-bindgen = { version = "0.2", features = ["serde-serialize"] } # Optional for WASM builds
+wasm-bindgen-futures = { version = "0.4" } # Optional for WASM builds
+cfg-if = "1.0"
+bytemuck = { version = "1.14", features = ["derive"] } # Match lca-lsolver's version
+log = "0.4" # For logging facade
+thiserror = "1.0" # For error handling
+num-traits = "0.2" # Added dependency

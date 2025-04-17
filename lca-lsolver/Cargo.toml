@@ -1,0 +1,40 @@
+[package]
+name = "lca-lsolver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"] # For WASM and native library builds
+
+[dependencies]
+futures.workspace = true
+num-traits.workspace = true
+wasm-bindgen = { workspace = true, optional = true } # Optional for WASM builds
+cfg-if = { workspace = true}
+bytemuck.workspace = true
+log.workspace = true  # For logging facade
+thiserror.workspace = true # For error handling, potentially useful
+lca-core = { path = "../lca-core" }
+
+# Native-specific dependencies (optional, e.g., for native examples or testing)
+pollster = { version = "0.3", optional = true }
+
+[dev-dependencies]
+env_logger = "0.11.8"
+pollster = "0.3" # Simple executor for running async examples/tests
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] } # Needed for #[tokio::main] in examples
+# No specific dev-dependencies needed beyond regular ones for now
+
+# WASM-specific dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true } # Non-optional for WASM target
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["console"] }
+console_error_panic_hook = { version = "0.1", optional = true } # Useful for debugging WASM panics
+js-sys = "0.3"
+wasm-logger = { version = "0.2", optional = true } # Optional logger for WASM
+
+[features]
+default = ["native"] # Default to native build features
+native = ["pollster"] # Features needed for native execution
+wasm = ["wasm-bindgen", "console_error_panic_hook", "wasm-logger"] # Features needed for WASM build/execution
