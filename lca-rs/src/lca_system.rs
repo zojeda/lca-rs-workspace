@@ -1,7 +1,6 @@
-use std::collections::HashMap;
-
-use lca_core::{GpuDevice, Matrix, SparseMatrix};
+use lca_core::{GpuDevice, LcaCoreError, Matrix, SparseMatrix, sparse_matrix::Triplete};
 use lca_lsolver::algorithms::{BiCGSTAB, SolveAlgorithm};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     LcaMatrix,
@@ -17,13 +16,14 @@ pub struct LcaSystem {
     a_matrix: LcaMatrix,
     b_matrix: LcaMatrix,
     c_matrix: LcaMatrix,
+    evaluation_demand_process_names: Option<Vec<String>>,
 }
 
 #[cfg_attr(feature = "wasm", wasm_bindgen)]
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DemandItem {
-  pub(crate) product: String,
-  pub(crate) amount: f32,
+    pub(crate) product: String,
+    pub(crate) amount: f32,
 }
 
 impl DemandItem {
@@ -34,11 +34,17 @@ impl DemandItem {
 
 #[cfg_attr(feature = "wasm", wasm_bindgen)]
 impl LcaSystem {
-    pub fn new(a_matrix: LcaMatrix, b_matrix: LcaMatrix, c_matrix: LcaMatrix) -> Result<Self> {
+    pub fn new(
+        a_matrix: LcaMatrix,
+        b_matrix: LcaMatrix,
+        c_matrix: LcaMatrix,
+        evaluation_demand_process_names: Option<Vec<String>>,
+    ) -> Result<Self> {
         Ok(Self {
             a_matrix,
             b_matrix,
             c_matrix,
+            evaluation_demand_process_names,
         })
     }
 
@@ -55,11 +61,15 @@ impl LcaSystem {
     pub fn c_matrix(&self) -> &LcaMatrix {
         &self.c_matrix
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn evaluation_demand_process_names(&self) -> &Option<Vec<String>> {
+        &self.evaluation_demand_process_names
+    }
 
     pub async fn evaluate(
         &self,
         device: &GpuDevice,
-        demand: Vec<DemandItem>,
+        demand: Option<Vec<DemandItem>>,
         methods: Option<Vec<String>>,
     ) -> Result<Vec<f32>> {
         log::info!("Evaluating LCA system...");
@@ -84,16 +94,59 @@ impl LcaSystem {
             &self.b_matrix.matrix,
             &new_c_matrix.matrix,
             f_vec,
-            1000, // max_iterations
-            5e-3, // tolerance
+            1000, // FIXME hardcoded max_iterations
+            8e-3, // FIXME hardcoded tolerance
         )
         .await
     }
 
-    fn get_demand_vector(&self, demand_vec: Vec<DemandItem>) -> Result<Vec<f32>> {
+    fn get_demand_vector(&self, demand: Option<Vec<DemandItem>>) -> Result<Vec<f32>> {
+        let demand_items_for_f_vec = match demand {
+            Some(actual_demand) if !actual_demand.is_empty() => {
+                log::debug!("Using provided explicit demand.");
+                actual_demand
+            }
+            _ => {
+                // Covers None or Some(empty_vec)
+                if let Some(evaluation_demand_process_names) = &self.evaluation_demand_process_names
+                {
+                    if !evaluation_demand_process_names.is_empty() {
+                        log::info!(
+                            "No explicit/empty demand provided; using default demand for evaluation processes."
+                        );
+                        evaluation_demand_process_names
+                            .iter()
+                            .map(|name| DemandItem::new(name.clone(), 1.0))
+                            .collect::<Vec<DemandItem>>()
+                    } else {
+                        log::warn!(
+                            "No explicit/empty demand provided and no default evaluation processes defined. The demand vector (f_vec) will be all zeros."
+                        );
+                        Vec::new()
+                    }
+                } else {
+                    log::warn!(
+                        "No explicit/empty demand provided and no default evaluation processes defined. The demand vector (f_vec) will be all zeros."
+                    );
+                    Vec::new()
+                }
+            }
+        };
+
+        if demand_items_for_f_vec.is_empty() && self.a_matrix.matrix.rows() > 0 {
+            log::warn!(
+                "The list of demand items to process is empty. The demand vector (f_vec) will be all zeros."
+            );
+        }
         let mut f_vec = vec![0.0; self.a_matrix.matrix.rows()];
-        for demand in demand_vec {
-            if let Some(index) = self.a_matrix.col_ids.iter().position(|id| id == &demand.product) {
+
+        for demand in demand_items_for_f_vec {
+            if let Some(index) = self
+                .a_matrix
+                .col_ids
+                .iter()
+                .position(|id| id == &demand.product)
+            {
                 f_vec[index] = demand.amount;
             } else {
                 return Err(LcaError::DimensionError(format!(
@@ -160,7 +213,7 @@ async fn calculate_lca(
     // --- 5. Transfer Data to GPU ---
     log::debug!("Transferring data to GPU...");
     // Use device.create_sparse_matrix and device.create_vector
-    let a_gpu = device.create_sparse_matrix(&a_cpu)?;
+    let mut a_gpu = device.create_sparse_matrix(&a_cpu)?;
     let b_gpu = device.create_sparse_matrix(&b_cpu)?;
     let c_gpu = device.create_sparse_matrix(&c_cpu)?;
     let f_gpu = device.create_vector("f_gpu", &f)?;
@@ -177,10 +230,50 @@ async fn calculate_lca(
     log::warn!(
         "Reading f vector back from GPU to CPU due to current SolveAlgorithm trait signature. This is inefficient."
     );
-    let f_cpu_temp = f_gpu.read_contents().await?; // Read back
+    let f_cpu_temp = f_gpu.read_contents().await?;
+
+    let mut solve_result = solver.solve(&device, &a_gpu, &f_cpu_temp).await;
+    let mut regularization = 1e-4;
+    let mut attempts = 0;
+
+    while let Err(LcaCoreError::BiCGSTABBreakdown { .. }) = solve_result {
+        if attempts >= 4 {
+            break;
+        }
+
+        log::warn!(
+            "BiCGSTAB breakdown detected. Applying Tikhonov regularization (lambda = {})...",
+            regularization
+        );
+
+        // Apply Tikhonov regularization to the diagonal of A
+        let a_cpu = a_cpu.clone();
+        let new_triplets = a_cpu
+            .iter()
+            .map(|triplet| {
+                let mut triplet = triplet.clone();
+                if triplet.row() == triplet.col() {
+                    triplet = Triplete::new(
+                        triplet.row(),
+                        triplet.col(),
+                        triplet.value() + regularization,
+                    );
+                }
+                triplet
+            })
+            .collect::<Vec<Triplete>>();
+        let a_cpu = SparseMatrix::from_triplets(a_cpu.rows(), a_cpu.cols(), new_triplets)?;
+        // Transfer the modified A matrix back to GPU
+        log::debug!("Transferring modified A matrix back to GPU...");
+        a_gpu = device.create_sparse_matrix(&a_cpu)?;
+
+        regularization *= 10.0;
+        attempts += 1;
+        solve_result = solver.solve(&device, &a_gpu, &f_cpu_temp).await;
+    }
 
     // The trait solve method returns the solution vector x directly.
-    let solve_result = solver.solve(&device, &a_gpu, &f_cpu_temp).await?;
+    let solve_result = solve_result?;
 
     log::info!("System Ax=f solved. Metadata: {:?}", solve_result.metadata);
 
@@ -202,7 +295,7 @@ async fn calculate_lca(
 
     // --- 8. Calculate h = Cg ---
     log::debug!("Calculating h = Cg...");
-    // Use device.create_empty_vector for the output vector h
+    // Us e device.create_empty_vector for the output vector h
     let mut h_gpu = device.create_empty_vector("h_gpu", c_gpu.rows())?;
     c_gpu
         .spmv(&g_gpu, &mut h_gpu)

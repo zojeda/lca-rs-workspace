@@ -17,10 +17,10 @@ pub enum LcaError {
     Io(std::io::Error),
 
     #[from]
-    LcaModelCompilationError(LcaModelCompilationError),
+    LcaCoreError(LcaCoreError),
 
     #[from]
-    LcaCoreError(LcaCoreError),
+    LcaModelCompilationError(LcaModelCompilationError),
 
     DimensionError(String),
 

@@ -1,4 +1,7 @@
-use lca_core::{device::{GpuDevice, TransferStats}, sparse_matrix::Triplete};
+use lca_core::{
+    device::{GpuDevice, TransferStats},
+    sparse_matrix::Triplete,
+};
 use lca_lsolver::{
     algorithms::{BiCGSTAB, SolveAlgorithm},
     SparseMatrix,
@@ -36,8 +39,7 @@ fn create_pentadiagonal_matrix(n: usize) -> SparseMatrix {
         }
     }
 
-    SparseMatrix::from_triplets(n, n, triplets)
-        .expect("Failed to create sparse matrix from COO")
+    SparseMatrix::from_triplets(n, n, triplets).expect("Failed to create sparse matrix from COO")
 }
 
 /// Creates a vector b of size n with b[i] = sin(i).

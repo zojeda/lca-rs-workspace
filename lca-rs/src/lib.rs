@@ -5,7 +5,7 @@ pub mod error;
 pub mod model;
 
 pub use lca_matrix::LcaMatrix;
-pub use lca_system::{LcaSystem, DemandItem};
+pub use lca_system::{DemandItem, LcaSystem};
 
 #[cfg(feature = "wasm")]
 use console_error_panic_hook;
@@ -27,7 +27,6 @@ pub fn wasm_init() {
         log::info!("LCA WASM module initialized.");
     });
 }
-
 
 #[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub fn human_size(size: u64) -> String {

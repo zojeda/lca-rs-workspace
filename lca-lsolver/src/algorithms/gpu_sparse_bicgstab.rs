@@ -202,6 +202,7 @@ pub(super) async fn gpu_sparse_bicgstab(
                 iteration: i,
                 value_name: "rho".to_string(),
                 value: rho,
+                residual: residual_norm,
             });
         }
 
@@ -218,6 +219,7 @@ pub(super) async fn gpu_sparse_bicgstab(
                     iteration: i,
                     value_name: "omega".to_string(),
                     value: omega,
+                    residual: residual_norm,
                 });
             }
             if rho_prev.abs() < f32::EPSILON {
@@ -229,6 +231,7 @@ pub(super) async fn gpu_sparse_bicgstab(
                     iteration: i,
                     value_name: "rho_prev".to_string(),
                     value: rho_prev,
+                    residual: residual_norm,
                 });
             }
             let beta = (rho / rho_prev) * (alpha / omega);
@@ -260,6 +263,7 @@ pub(super) async fn gpu_sparse_bicgstab(
                 iteration: i,
                 value_name: "r_hat_0_dot_v".to_string(),
                 value: r_hat_0_dot_v,
+                residual: residual_norm,
             });
         }
         alpha = rho / r_hat_0_dot_v;
@@ -299,6 +303,7 @@ pub(super) async fn gpu_sparse_bicgstab(
                 iteration: i,
                 value_name: "t_dot_t".to_string(),
                 value: t_dot_t,
+                residual: residual_norm,
             });
         }
         let t_dot_s = device.dot(&t, &s).await?;
@@ -334,6 +339,7 @@ pub(super) async fn gpu_sparse_bicgstab(
                 iteration: i,
                 value_name: "omega".to_string(),
                 value: omega,
+                residual: residual_norm,
             });
         }
 

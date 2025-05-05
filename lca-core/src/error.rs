@@ -38,11 +38,12 @@ pub enum LcaCoreError {
     #[error("Internal error: {0}")]
     Internal(String),
 
-    #[error("BiCGSTAB breakdown at iteration {iteration}: {value_name} ({value}) is near zero.")]
+    #[error("BiCGSTAB breakdown at iteration {iteration}: {value_name} ({value}) is near zero. Residual: {residual}")]
     BiCGSTABBreakdown {
         iteration: usize,
         value_name: String, // e.g., "rho", "omega"
         value: f32,
+        residual: f32,
     },
     // Add more specific errors as needed
 }

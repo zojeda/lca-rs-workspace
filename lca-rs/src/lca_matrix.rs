@@ -7,7 +7,6 @@ use crate::error::Result;
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
-
 #[cfg_attr(feature = "wasm", wasm_bindgen)]
 #[derive(Debug, Clone)]
 pub struct LcaMatrix {
