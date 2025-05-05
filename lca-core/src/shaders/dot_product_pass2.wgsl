@@ -5,11 +5,11 @@ struct Params {
 };
 
 // Shared memory for reduction
-var<workgroup> partial_sums: array<f32, 256>; // Size must match workgroup_size
+var<workgroup> partial_sums: array<f64, 256>; // Size must match workgroup_size
 
 @group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> partial_results: array<f32>; // Input: Partial sums from Pass 1
-@group(0) @binding(2) var<storage, read_write> final_result: array<f32>; // Output: Single f32 value
+@group(0) @binding(1) var<storage, read> partial_results: array<f64>; // Input: Partial sums from Pass 1
+@group(0) @binding(2) var<storage, read_write> final_result: array<f64>; // Output: Single f64 value
 
 @compute @workgroup_size(256)
 fn main(

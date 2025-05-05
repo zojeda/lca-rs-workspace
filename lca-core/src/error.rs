@@ -38,11 +38,16 @@ pub enum LcaCoreError {
     #[error("Internal error: {0}")]
     Internal(String),
 
-    #[error("BiCGSTAB breakdown at iteration {iteration}: {value_name} ({value}) is near zero.")]
-    BiCGSTABBreakdown {
+    #[error("MethodNotImplemented error: {0}")]
+    MethodNotImplemented(String),
+
+    #[error("{algorithm_name} breakdown at iteration {iteration}: {value_name} ({value}) is near zero. Residual: {residual}")]
+    AlgorithmBreakdown {
+        algorithm_name: String, // e.g., "BiCGSTAB", "QMR"
         iteration: usize,
         value_name: String, // e.g., "rho", "omega"
-        value: f32,
+        value: f64,
+        residual: f64,
     },
     // Add more specific errors as needed
 }

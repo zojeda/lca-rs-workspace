@@ -57,7 +57,7 @@ impl GpuContext {
                 label: Some("lca_core device"),
                 trace: wgpu::Trace::Off,
                 memory_hints: wgpu::MemoryHints::Performance,
-                required_features: wgpu::Features::SHADER_F64, // Enable f32 support in shaders
+                required_features: wgpu::Features::SHADER_F64, // Enable f64 support in shaders
                 required_limits: limits,                       // Use adjusted limits
             })
             .await

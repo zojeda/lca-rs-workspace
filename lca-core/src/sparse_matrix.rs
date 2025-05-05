@@ -13,7 +13,7 @@ pub struct SparseMatrix {
     /// Number of columns.
     cols: usize,
     /// Vector containing the non-zero values of the matrix.
-    pub(crate) values: Vec<f32>, // Made pub(crate) for internal access
+    pub(crate) values: Vec<f64>, // Made pub(crate) for internal access
     /// Vector containing the column indices corresponding to the values.
     pub(crate) col_indices: Vec<usize>,
     /// Vector containing the pointers to the start of each row in `values` and `col_indices`.
@@ -60,7 +60,7 @@ impl SparseMatrix {
         }
 
         let nnz = coords.len();
-        let mut values = vec![f32::default(); nnz];
+        let mut values = vec![f64::default(); nnz];
         let mut col_indices = vec![0usize; nnz];
         // Temporary copy of row_ptr to keep track of positions while filling
         let mut next = row_ptr.clone();
@@ -90,7 +90,7 @@ impl SparseMatrix {
     pub fn from_csr(
         rows: usize,
         cols: usize,
-        values: Vec<f32>,
+        values: Vec<f64>,
         col_indices: Vec<usize>,
         row_ptr: Vec<usize>,
     ) -> Result<Self, LcaCoreError> {
@@ -156,7 +156,7 @@ impl SparseMatrix {
 
     /// Gets the value at a specific row and column.
     /// This is inefficient for sparse matrices, primarily for testing/debugging.
-    pub fn get(&self, row: usize, col: usize) -> Option<f32> {
+    pub fn get(&self, row: usize, col: usize) -> Option<f64> {
         if row >= self.rows || col >= self.cols {
             return None; // Out of bounds
         }
@@ -182,13 +182,13 @@ impl SparseMatrix {
 
     #[cfg(not(feature = "wasm"))]
     /// Returns a slice containing the non-zero values.
-    pub fn values(&self) -> &[f32] {
+    pub fn values(&self) -> &[f64] {
         &self.values
     }
 
     #[cfg(not(feature = "wasm"))]
     /// Returns a mutable slice containing the non-zero values.
-    pub fn values_mut(&mut self) -> &mut [f32] {
+    pub fn values_mut(&mut self) -> &mut [f64] {
         &mut self.values
     }
 
@@ -207,7 +207,7 @@ impl SparseMatrix {
     /// Creates a SparseMatrix from a dense 2D vector representation.
     /// Requires `T` to implement `PartialEq` and `Default`.
     #[cfg(not(feature = "wasm"))]
-    pub fn from_dense(dense: &[Vec<f32>]) -> Self {
+    pub fn from_dense(dense: &[Vec<f64>]) -> Self {
         let rows = dense.len();
         if rows == 0 {
             return SparseMatrix::new(0, 0);
@@ -229,7 +229,7 @@ impl SparseMatrix {
                 // For simplicity matching the original helper, we proceed assuming rectangular based on row 0.
             }
             for (c, &val) in row_vec.iter().enumerate() {
-                if val != f32::default() {
+                if val != f64::default() {
                     // Compare against default value
                     values.push(val);
                     col_indices.push(c);
@@ -250,10 +250,10 @@ impl SparseMatrix {
 pub struct Triplete {
     row: usize,
     col: usize,
-    value: f32,
+    value: f64,
 }
 impl Triplete {
-    pub fn new(row: usize, col: usize, value: f32) -> Self {
+    pub fn new(row: usize, col: usize, value: f64) -> Self {
         Triplete { row, col, value }
     }
 
@@ -265,7 +265,7 @@ impl Triplete {
         self.col
     }
 
-    pub fn value(&self) -> f32 {
+    pub fn value(&self) -> f64 {
         self.value
     }
 }
@@ -319,7 +319,7 @@ impl SparseMatrix {
 
 // Implement the generic Matrix trait for the CPU version
 impl Matrix for SparseMatrix {
-    type Value = f32;
+    type Value = f64;
 
     fn dims(&self) -> (usize, usize) {
         (self.rows, self.cols)
@@ -457,7 +457,7 @@ pub struct SparseMatrixGpu {
     rows: usize,
     /// Number of columns.
     cols: usize,
-    /// GPU buffer containing the non-zero values (f32).
+    /// GPU buffer containing the non-zero values (f64).
     values_buffer: wgpu::Buffer,
     /// GPU buffer containing the column indices (u32).
     col_indices_buffer: wgpu::Buffer,
@@ -471,7 +471,7 @@ pub struct SparseMatrixGpu {
 
 // Implement the Matrix trait for the GPU version
 impl Matrix for SparseMatrixGpu {
-    type Value = f32; // GPU version likely specialized to f32 for now
+    type Value = f64; // GPU version likely specialized to f64 for now
 
     fn dims(&self) -> (usize, usize) {
         (self.rows, self.cols)

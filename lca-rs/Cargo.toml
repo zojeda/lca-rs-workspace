@@ -19,6 +19,7 @@ wasm-bindgen = { workspace = true, optional = true } # Optional for WASM builds
 pollster = { version = "0.3", optional = true }
 serde = { version = "1.0.219", features = ["derive"] }
 derive_more = { version = "2.0.1", features = ["error", "from"] }
+serde_json = { version = "1.0.140", features = ["preserve_order"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

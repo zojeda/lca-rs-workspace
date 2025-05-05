@@ -17,16 +17,21 @@ pub enum LcaError {
     Io(std::io::Error),
 
     #[from]
-    LcaModelCompilationError(LcaModelCompilationError),
+    LcaCoreError(LcaCoreError),
 
     #[from]
-    LcaCoreError(LcaCoreError),
+    LcaModelCompilationError(LcaModelCompilationError),
 
     DimensionError(String),
 
     JsError(String),
 
     ConversionError(String),
+
+    // FIXME: This should be a more specific error
+    Generic(String),
+
+    LinkError(String),
 }
 
 // region:    --- Error Boilerplate

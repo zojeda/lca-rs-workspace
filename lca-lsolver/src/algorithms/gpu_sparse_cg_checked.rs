@@ -21,19 +21,19 @@ use super::{
 #[derive(Debug, Clone, Copy)]
 pub struct ConjugateGradientMetadata {
     pub iterations: usize,
-    pub residual_norm: f32,
+    pub residual_norm: f64,
 }
 
 // Implement for SparseMatrixGpu now, as input is expected to be on GPU
 impl SolveAlgorithm<GpuDevice, SparseMatrixGpu> for ConjugateGradient {
-    type Value = f32;
+    type Value = f64;
     type Metadata = ConjugateGradientMetadata;
 
     async fn solve(
         &self,
         device: &GpuDevice,
         a: &SparseMatrixGpu, // Changed input type
-        b: &[f32],           // Keep b as slice, will be uploaded
+        b: &[f64],           // Keep b as slice, will be uploaded
     ) -> Result<SolveResult<Self::Value, Self::Metadata>, LcaCoreError> {
         // Validation
         if a.rows() != b.len() {
@@ -92,7 +92,7 @@ impl SolveAlgorithm<GpuDevice, SparseMatrixGpu> for ConjugateGradient {
 #[derive(Debug, Clone, Copy)]
 pub struct SolveInfo {
     pub iterations: usize,
-    pub residual_norm: f32,
+    pub residual_norm: f64,
 }
 
 // --- Main Solver Logic ---
@@ -115,7 +115,7 @@ pub async fn solve_cg_checked(
     b: &GpuVector,
     x: &mut GpuVector, // Initial guess, overwritten with solution
     max_iterations: usize,
-    tolerance: f32,
+    tolerance: f64,
 ) -> Result<SolveInfo, LcaCoreError> {
     // Context is no longer needed explicitly here, use device methods or vector/matrix internal context.
     // let context = matrix.context(); // Cannot access private context
@@ -174,7 +174,7 @@ pub async fn solve_cg_checked(
 
         // alpha = rs_old / (p^T * Ap)
         let pt_ap = device.dot(&p, &ap).await?; // Use device.dot
-        if pt_ap.abs() < f32::EPSILON {
+        if pt_ap.abs() < f64::EPSILON {
             warn!("CG breakdown: p^T * Ap is close to zero.");
             return Err(LcaCoreError::Internal(
                 "CG breakdown: p^T * Ap near zero".to_string(),
@@ -208,7 +208,7 @@ pub async fn solve_cg_checked(
         }
 
         // beta = rs_new / rs_old
-        if rs_old.abs() < f32::EPSILON {
+        if rs_old.abs() < f64::EPSILON {
             warn!("CG breakdown: rs_old is close to zero.");
             return Err(LcaCoreError::Internal(
                 "CG breakdown: rs_old near zero".to_string(),

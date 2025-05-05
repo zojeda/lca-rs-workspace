@@ -5,7 +5,7 @@ use std::fmt::Debug;
 /// Implementations can be sparse, dense, CPU-based, GPU-based.
 /// Needs Send + Sync + Debug.
 pub trait Matrix: Debug {
-    /// The underlying numeric type of the matrix elements (e.g., f32, f32).
+    /// The underlying numeric type of the matrix elements (e.g., f64, f64).
     type Value: Copy + Debug + Default + Pod + Zeroable; // Added Zeroable
 
     /// Returns the dimensions of the matrix as (rows, columns).
@@ -32,7 +32,7 @@ pub trait Matrix: Debug {
 /// Implementations can be CPU-based or GPU-based.
 /// Needs Send + Sync + Debug.
 pub trait Vector: Debug {
-    /// The underlying numeric type of the vector elements (e.g., f32, f32).
+    /// The underlying numeric type of the vector elements (e.g., f64, f64).
     type Value: Copy + Debug + Default + Pod + Zeroable; // Added Zeroable
 
     /// Returns the number of elements in the vector.

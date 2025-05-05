@@ -12,9 +12,9 @@ struct MatrixInfo {
 // CSR format uses row_pointers instead of row_indices directly per element
 @group(0) @binding(1) var<storage, read> row_pointers: array<u32>; // A's row pointers (size rows + 1)
 @group(0) @binding(2) var<storage, read> col_indices: array<u32>; // A's col indices (size nnz)
-@group(0) @binding(3) var<storage, read> values: array<f32>;      // A's values (size nnz)
-@group(0) @binding(4) var<storage, read> x: array<f32>;          // Input vector x (size cols)
-@group(0) @binding(5) var<storage, read_write> y_output: array<f32>; // Output vector y (f32, size rows)
+@group(0) @binding(3) var<storage, read> values: array<f64>;      // A's values (size nnz)
+@group(0) @binding(4) var<storage, read> x: array<f64>;          // Input vector x (size cols)
+@group(0) @binding(5) var<storage, read_write> y_output: array<f64>; // Output vector y (f64, size rows)
 
 // Main SpMV kernel: One thread per row
 @compute @workgroup_size(256)
@@ -27,7 +27,7 @@ fn main_spmv_csr_per_row(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let row_start = row_pointers[row];
     let row_end = row_pointers[row + 1];
-    var sum: f32 = 0.0;
+    var sum: f64 = 0.0;
 
     for (var i = row_start; i < row_end; i = i + 1u) {
         let col = col_indices[i];

@@ -13,7 +13,7 @@ use wgpu::PollType;
 pub struct GpuVector {
     // Renamed from Buffer, kept Zeroable bound
     buffer: wgpu::Buffer,
-    size: usize, // Number of elements of type f32
+    size: usize, // Number of elements of type f64
     size_bytes: u64,
     usage: wgpu::BufferUsages,
     label: String,
@@ -32,7 +32,7 @@ impl GpuVector {
         label: String,
         context: Arc<GpuContext>,
     ) -> Self {
-        let size_bytes = (size * mem::size_of::<f32>()) as u64;
+        let size_bytes = (size * mem::size_of::<f64>()) as u64;
         Self {
             buffer,
             size,
@@ -76,7 +76,7 @@ impl GpuVector {
 
     /// Reads the vector's contents back to the CPU using the internal context.
     /// Note: This is an async operation and involves GPU-CPU synchronization.
-    pub async fn read_contents(&self) -> Result<Vec<f32>, LcaCoreError> {
+    pub async fn read_contents(&self) -> Result<Vec<f64>, LcaCoreError> {
         // Use the internal context
         self.context
             .read_buffer_to_cpu(self.inner(), self.size())
@@ -85,7 +85,7 @@ impl GpuVector {
 
     /// Writes data from a CPU slice into this GPU vector using the internal context.
     /// Note: This is an async operation.
-    pub async fn write_contents(&self, data: &[f32]) -> Result<(), LcaCoreError> {
+    pub async fn write_contents(&self, data: &[f64]) -> Result<(), LcaCoreError> {
         if data.len() != self.size {
             return Err(LcaCoreError::InvalidDimensions(format!(
                 "Data length ({}) does not match GpuVector size ({})",
@@ -157,7 +157,7 @@ impl GpuVector {
 
 // Implement the Vector trait for GpuVector
 impl Vector for GpuVector {
-    type Value = f32;
+    type Value = f64;
 
     fn len(&self) -> usize {
         self.size()

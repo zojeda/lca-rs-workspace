@@ -3,7 +3,7 @@
 // Binding groups define how resources (buffers, textures) are accessed.
 @group(0) @binding(0) var<storage, read> row_indices: array<u32>; // Input: Row indices of non-zero elements
 @group(0) @binding(1) var<storage, read> col_indices: array<u32>; // Input: Column indices of non-zero elements
-@group(0) @binding(2) var<storage, read> values: array<f32>;      // Input: Values of non-zero elements
+@group(0) @binding(2) var<storage, read> values: array<f64>;      // Input: Values of non-zero elements
 @group(0) @binding(3) var<storage, read_write> result_flag: atomic<u32>; // Output: Flag (0 = all positive, 1 = non-positive found)
 
 // Entry point for the compute shader.

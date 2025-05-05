@@ -9,7 +9,7 @@ pub struct SolveResult<V: Float, M> {
 /// Trait representing a specific linear system solving algorithm.
 /// Generic over the Device (CPU/GPU) and Matrix type (Sparse/Dense) it supports.
 pub trait SolveAlgorithm<D: Device, M: Matrix> {
-    /// The numeric type the algorithm operates on (e.g., f32, f32).
+    /// The numeric type the algorithm operates on (e.g., f64, f64).
     /// Must match the Matrix::Value type.
     type Value: Float + Copy + Send + Sync + std::fmt::Debug + Default + bytemuck::Pod;
     type Metadata: std::fmt::Debug;
@@ -69,13 +69,16 @@ pub mod gpu_sparse_cg_checked; // GPU Sparse Conjugate Gradient with SPD check
 
 use num_traits::Float;
 
+// Re-export metadata types from submodules
+pub use gpu_sparse_bicgstab::BiCGSTABMetadata; // Assuming it's defined there or should be
+
 // --- Algorithm Struct Definitions ---
 // Define structs that represent specific algorithms and hold their parameters.
 
 /// BiConjugate Gradient Stabilized Algorithm.
 #[derive(Debug, Clone)]
 pub struct BiCGSTAB {
-    pub tolerance: f32, // Or make generic T?
+    pub tolerance: f64, // Or make generic T?
     pub max_iterations: usize,
     pub use_preconditioner: bool, // Flag for Jacobi preconditioner
 }
@@ -90,13 +93,14 @@ impl Default for BiCGSTAB {
     }
 }
 
+
 impl BiCGSTAB {
     /// Creates a new instance of the BiCGSTAB algorithm with default parameters.
     pub fn new() -> Self {
         Self::default()
     }
     /// Creates a new instance of the BiCGSTAB algorithm with specified parameters.
-    pub fn with_params(tolerance: f32, max_iterations: usize, use_preconditioner: bool) -> Self {
+    pub fn with_params(tolerance: f64, max_iterations: usize, use_preconditioner: bool) -> Self {
         Self {
             tolerance,
             max_iterations,
@@ -108,7 +112,7 @@ impl BiCGSTAB {
 /// Conjugate Gradient Algorithm.
 #[derive(Debug, Clone)]
 pub struct ConjugateGradient {
-    pub tolerance: f32, // Or make generic T?
+    pub tolerance: f64, // Or make generic T?
     pub max_iterations: usize,
     // Optional: Preconditioner type could go here
 }
@@ -128,7 +132,7 @@ impl ConjugateGradient {
         Self::default()
     }
     /// Creates a new instance of the Conjugate Gradient algorithm with specified parameters.
-    pub fn with_params(tolerance: f32, max_iterations: usize) -> Self {
+    pub fn with_params(tolerance: f64, max_iterations: usize) -> Self {
         Self {
             tolerance,
             max_iterations,

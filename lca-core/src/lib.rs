@@ -44,4 +44,18 @@ impl SparseMatrixGpu {
         // Context is already part of SparseMatrixGpu
         ops::internal_spmv(&self.context, self, x, y).await
     }
+
+    /// Performs the sparse matrix-vector multiplication `y = self^T * x` on the GPU,
+    /// where `self` is matrix A.
+    /// Uses the internal GPU context associated with this matrix.
+    ///
+    /// # Arguments
+    /// * `x` - The input vector `x` (corresponds to rows of A, so columns of A^T).
+    /// * `y` - The output vector `y` (corresponds to columns of A, so rows of A^T, mutable).
+    ///
+    /// # Errors
+    /// Returns `LcaCoreError` if dimensions mismatch or GPU execution fails.
+    pub async fn spmv_transpose(&self, x: &GpuVector, y: &mut GpuVector) -> Result<(), LcaCoreError> {
+        ops::internal_spmv_transpose(&self.context, self, x, y).await
+    }
 }

@@ -6,12 +6,12 @@ struct Params {
 };
 
 // Shared memory within the workgroup for intermediate sums
-var<workgroup> partial_sums: array<f32, 256>; // Size must match workgroup_size
+var<workgroup> partial_sums: array<f64, 256>; // Size must match workgroup_size
 
 @group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> x: array<f32>;
-@group(0) @binding(2) var<storage, read> y: array<f32>;
-@group(0) @binding(3) var<storage, read_write> partial_results: array<f32>; // Output buffer for partial sums
+@group(0) @binding(1) var<storage, read> x: array<f64>;
+@group(0) @binding(2) var<storage, read> y: array<f64>;
+@group(0) @binding(3) var<storage, read_write> partial_results: array<f64>; // Output buffer for partial sums
 
 @compute @workgroup_size(256) // workgroup_size_x
 fn main(

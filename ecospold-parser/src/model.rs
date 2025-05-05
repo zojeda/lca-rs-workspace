@@ -193,7 +193,7 @@ pub struct IntermediateExchange {
     #[serde(rename = "@unitId")]
     pub unit_id: String,
     #[serde(rename = "@amount")]
-    pub amount: f32, // Use f32 for numerical amounts
+    pub amount: f64, // Use f64 for numerical amounts
     #[serde(rename = "@intermediateExchangeId")]
     pub intermediate_exchange_id: String,
     #[serde(
@@ -213,7 +213,7 @@ pub struct IntermediateExchange {
         default,
         skip_serializing_if = "Option::is_none"
     )]
-    pub production_volume_amount: Option<f32>,
+    pub production_volume_amount: Option<f64>,
     #[serde(rename = "@sourceId", default, skip_serializing_if = "Option::is_none")]
     pub source_id: Option<String>,
     #[serde(
@@ -259,7 +259,7 @@ pub struct ElementaryExchange {
     #[serde(rename = "@unitId")]
     pub unit_id: String,
     #[serde(rename = "@amount")]
-    pub amount: f32,
+    pub amount: f64,
     #[serde(rename = "@elementaryExchangeId")]
     pub elementary_exchange_id: String,
     #[serde(
@@ -324,7 +324,7 @@ pub struct Parameter {
     #[serde(rename = "@variableName")]
     pub variable_name: String,
     #[serde(rename = "@amount")]
-    pub amount: f32,
+    pub amount: f64,
     #[serde(
         rename = "@mathematicalRelation",
         default,
@@ -359,24 +359,24 @@ pub struct Uncertainty {
 #[serde(rename_all = "camelCase")]
 pub struct Lognormal {
     #[serde(rename = "@meanValue")]
-    pub mean_value: f32,
+    pub mean_value: f64,
     #[serde(rename = "@mu")]
-    pub mu: f32,
+    pub mu: f64,
     #[serde(rename = "@variance")]
-    pub variance: f32,
+    pub variance: f64,
     #[serde(rename = "@varianceWithPedigreeUncertainty")]
-    pub variance_with_pedigree_uncertainty: f32,
+    pub variance_with_pedigree_uncertainty: f64,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct UndefinedUncertainty {
     #[serde(rename = "@minValue")]
-    pub min_value: f32,
+    pub min_value: f64,
     #[serde(rename = "@maxValue")]
-    pub max_value: f32,
+    pub max_value: f64,
     #[serde(rename = "@standardDeviation95")]
-    pub standard_deviation95: f32,
+    pub standard_deviation95: f64,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -400,7 +400,7 @@ pub struct Property {
     #[serde(rename = "@propertyId")]
     pub property_id: String,
     #[serde(rename = "@amount")]
-    pub amount: f32, // Sometimes this is a string (e.g., mathematicalRelation), handle appropriately if needed
+    pub amount: f64, // Sometimes this is a string (e.g., mathematicalRelation), handle appropriately if needed
     #[serde(rename = "@unitId")]
     pub unit_id: String,
     #[serde(
@@ -447,7 +447,7 @@ pub struct ModellingAndValidation {
 #[serde(rename_all = "camelCase")]
 pub struct Representativeness {
     #[serde(rename = "@percent", default, skip_serializing_if = "Option::is_none")]
-    pub percent: Option<f32>,
+    pub percent: Option<f64>,
     #[serde(rename = "@systemModelId")]
     pub system_model_id: String,
     pub system_model_name: TextLang,

@@ -6,15 +6,15 @@ use crate::algorithms::{SolveAlgorithm, ConjugateGradient};
 use async_trait::async_trait;
 
 #[async_trait]
-impl SolveAlgorithm<GpuDevice, SparseMatrix<f32>> for ConjugateGradient {
-    type Value = f32;
+impl SolveAlgorithm<GpuDevice, SparseMatrix<f64>> for ConjugateGradient {
+    type Value = f64;
 
     async fn solve(
         &self,
         device: &GpuDevice,
-        a: &SparseMatrix<f32>,
-        b: &[f32],
-    ) -> Result<Vec<f32>, LsolverError> {
+        a: &SparseMatrix<f64>,
+        b: &[f64],
+    ) -> Result<Vec<f64>, LsolverError> {
         // Use the trait's validation helper
         self.validate_inputs(a, b)?;
 

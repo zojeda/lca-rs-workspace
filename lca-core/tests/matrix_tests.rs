@@ -5,10 +5,10 @@ fn test_matrix_read_back() {
 
     //     let rows = 2;
     //     let cols = 3;
-    //     let original_data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    //     let original_data: Vec<f64> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
 
     //     // Create matrix on GPU
-    //     let matrix = DenseMatrixf32::from_data(context.clone(), &original_data, rows, cols)
+    //     let matrix = DenseMatrixf64::from_data(context.clone(), &original_data, rows, cols)
     //         .expect("Failed to create matrix from data");
 
     //     assert_eq!(matrix.rows(), rows);
@@ -33,7 +33,7 @@ fn test_matrix_read_back() {
 
     //     // Optional: Check with a small tolerance for floating-point comparisons if needed
     //     // for (original, read) in original_data.iter().zip(read_back_data.iter()) {
-    //     //     assert!((original - read).abs() < f32::EPSILON, "Floating point mismatch");
+    //     //     assert!((original - read).abs() < f64::EPSILON, "Floating point mismatch");
     //     // }
     // });
 }

@@ -7,7 +7,6 @@ use crate::error::Result;
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
-
 #[cfg_attr(feature = "wasm", wasm_bindgen)]
 #[derive(Debug, Clone)]
 pub struct LcaMatrix {
@@ -86,4 +85,13 @@ impl LcaMatrix {
     pub fn row_id(&self, index: usize) -> Option<&String> {
         self.row_ids.get(index)
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn col_idx_by_name(&self, name: &str) -> Option<usize> {
+        self.col_ids.iter().position(|id| id == name)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn row_idx_by_name(&self, name: &str) -> Option<usize> {
+        self.row_ids.iter().position(|id| id == name)
+    }
+
 }

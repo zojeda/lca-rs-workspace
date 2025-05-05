@@ -14,7 +14,7 @@ use std::mem;
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct AxpyParams {
     // Removed pub
-    alpha: f32,
+    alpha: f64,
     size: u32,
     _padding: [u32; 2],
 }
@@ -43,7 +43,7 @@ struct SpmvParams {
 pub(crate) async fn internal_axpy(
     // Renamed and changed visibility
     context: &GpuContext,
-    alpha: f32,
+    alpha: f64,
     x: &GpuVector,     // Updated type
     y: &mut GpuVector, // Updated type
 ) -> Result<(), LcaCoreError> {
@@ -173,7 +173,7 @@ pub(crate) async fn internal_dot(
     context: &GpuContext,
     x: &GpuVector, // Updated type
     y: &GpuVector, // Updated type
-) -> Result<f32, LcaCoreError> {
+) -> Result<f64, LcaCoreError> {
     let device = &context.device;
     let queue = &context.queue;
     let size = x.size() as u32;
@@ -196,7 +196,7 @@ pub(crate) async fn internal_dot(
     let num_workgroups = (size + workgroup_size - 1) / workgroup_size;
     let partial_results_buffer = context.create_empty_buffer(
         "Internal Dot Product Partial Results Buffer", // Updated label
-        num_workgroups as u64 * mem::size_of::<f32>() as u64,
+        num_workgroups as u64 * mem::size_of::<f64>() as u64,
         wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
         false,
     );
@@ -303,7 +303,7 @@ pub(crate) async fn internal_dot(
     });
     let final_result_buffer = context.create_empty_buffer(
         "Internal Dot Product Final Result Buffer", // Updated label
-        mem::size_of::<f32>() as u64,
+        mem::size_of::<f64>() as u64,
         wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
         false,
     );
@@ -416,7 +416,7 @@ pub(crate) async fn internal_dot(
             0,
             &final_result_buffer,
             0,
-            mem::size_of::<f32>() as u64,
+            mem::size_of::<f64>() as u64,
         );
     }
 
@@ -424,7 +424,7 @@ pub(crate) async fn internal_dot(
     queue.submit(std::iter::once(encoder.finish()));
     // Readback is handled by the context helper, which includes polling/awaiting
     let result_vec = context
-        .read_buffer_to_cpu::<f32>(&final_result_buffer, 1) // Read 1 f32 element
+        .read_buffer_to_cpu::<f64>(&final_result_buffer, 1) // Read 1 f64 element
         .await?;
 
     result_vec.first().copied().ok_or_else(|| {
@@ -465,7 +465,7 @@ pub(crate) async fn internal_spmv(
     // Create an intermediate output buffer. Atomics are no longer needed as the shader writes directly.
     let y_output_buffer = context.create_empty_buffer(
         "Internal SpMV Output Buffer", // New label
-        y.size_bytes(),                // Size for f32 elements
+        y.size_bytes(),                // Size for f64 elements
         wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST, // Writable storage
         false,
     );
@@ -645,6 +645,213 @@ pub(crate) async fn internal_spmv(
     // Polling might be needed here too, similar consideration as axpy
     cfg_if! { if #[cfg(not(target_arch = "wasm32"))] {
         // context.device.poll(wgpu::Maintain::Wait);
+    }}
+    Ok(())
+}
+
+/// Internal implementation for y = A^T * x on the GPU using CSR format.
+#[allow(clippy::too_many_lines)] // Similar complexity to spmv
+pub(crate) async fn internal_spmv_transpose(
+    context: &GpuContext,
+    matrix: &SparseMatrixGpu,
+    x: &GpuVector,     // Input vector x (corresponds to rows of A)
+    y: &mut GpuVector, // Output vector y (corresponds to columns of A)
+) -> Result<(), LcaCoreError> {
+    let device = &context.device;
+    let queue = &context.queue;
+    
+    // Dimensions of the original matrix A
+    let a_rows = matrix.rows() as u32;
+    let a_cols = matrix.cols() as u32;
+    let a_nnz = matrix.nnz() as u32;
+
+    // Dimension check for y = A^T * x:
+    // Number of rows in A^T is a_cols. This must match y.size().
+    // Number of columns in A^T is a_rows. This must match x.size().
+    if matrix.cols() != y.size() {
+        return Err(LcaCoreError::InvalidDimensions(format!(
+            "Matrix A cols ({}) (A^T rows) do not match vector y size ({}) for SpMV Transpose",
+            matrix.cols(),
+            y.size()
+        )));
+    }
+    if matrix.rows() != x.size() {
+        return Err(LcaCoreError::InvalidDimensions(format!(
+            "Matrix A rows ({}) (A^T cols) do not match vector x size ({}) for SpMV Transpose",
+            matrix.rows(),
+            x.size()
+        )));
+    }
+
+    // Create an intermediate output buffer for y.
+    let y_output_buffer = context.create_empty_buffer(
+        "Internal SpMV Transpose Output Buffer",
+        y.size_bytes(), // Size for f64 elements, y.size() is a_cols
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+        false,
+    );
+
+    let shader_source = include_str!("./shaders/spmv_csr_transpose.wgsl");
+    let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Internal SpMV CSR Transpose Shader"),
+        source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+    });
+
+    let params = SpmvParams { // Using the same SpmvParams struct
+        rows: a_rows,
+        cols: a_cols,
+        nnz: a_nnz,
+        _padding: 0,
+    };
+    let params_buffer = context.create_gpu_buffer_with_data(
+        "Internal SpMV Transpose Params Buffer",
+        bytemuck::bytes_of(&params),
+        wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    );
+
+    let bind_group_layout_main =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Internal SpMV CSR Transpose Main Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry { // params (binding 0)
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry { // row_pointers (binding 1)
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry { // col_indices (binding 2)
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry { // values (binding 3)
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry { // x_in (binding 4)
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry { // y_out (binding 5)
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false }, // Shader writes to this
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+    let pipeline_layout_main = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Internal SpMV CSR Transpose Main Pipeline Layout"),
+        bind_group_layouts: &[&bind_group_layout_main],
+        push_constant_ranges: &[],
+    });
+
+    let pipeline_main = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("Internal SpMV CSR Transpose Main Pipeline"),
+        layout: Some(&pipeline_layout_main),
+        module: &shader_module,
+        cache: None,
+        entry_point: Some("main_spmv_csr_transpose_per_col"), // Entry point in the new shader
+        compilation_options: Default::default(),
+    });
+
+    let bind_group_main = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Internal SpMV CSR Transpose Main Bind Group"),
+        layout: &bind_group_layout_main,
+        entries: &[
+            wgpu::BindGroupEntry { // params
+                binding: 0,
+                resource: params_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry { // row_pointers
+                binding: 1,
+                resource: matrix.row_pointers_buffer().as_entire_binding(),
+            },
+            wgpu::BindGroupEntry { // col_indices
+                binding: 2,
+                resource: matrix.col_indices_buffer().as_entire_binding(),
+            },
+            wgpu::BindGroupEntry { // values
+                binding: 3,
+                resource: matrix.values_buffer().as_entire_binding(),
+            },
+            wgpu::BindGroupEntry { // x_in (input vector x)
+                binding: 4,
+                resource: x.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry { // y_out (output vector y, using intermediate buffer)
+                binding: 5,
+                resource: y_output_buffer.as_entire_binding(),
+            },
+        ],
+    });
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("Internal SpMV Transpose Encoder"),
+    });
+    
+    let workgroup_size = 256; // Should match shader's workgroup_size.x
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("Internal SpMV CSR Transpose Main Pass"),
+            timestamp_writes: None,
+        });
+        compute_pass.set_pipeline(&pipeline_main);
+        compute_pass.set_bind_group(0, &bind_group_main, &[]);
+        // Dispatch one workgroup per column of A (which is a row of A^T, and the size of y_output_buffer)
+        // y.size() is a_cols
+        let workgroup_count_cols = (a_cols + workgroup_size - 1) / workgroup_size;
+        compute_pass.dispatch_workgroups(workgroup_count_cols, 1, 1);
+    }
+    
+    encoder.copy_buffer_to_buffer(
+        &y_output_buffer,
+        0u64,
+        y.inner(), // Get the underlying wgpu::Buffer from GpuVector y
+        0u64,
+        y.size_bytes() as u64,
+    );
+
+    queue.submit(std::iter::once(encoder.finish()));
+
+    cfg_if! { if #[cfg(not(target_arch = "wasm32"))] {
+        // context.device.poll(wgpu::Maintain::Wait); // Consider if polling is needed
     }}
     Ok(())
 }

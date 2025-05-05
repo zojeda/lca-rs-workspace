@@ -362,6 +362,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
+name = "fastrand"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
+dependencies = [
+ "getrandom",
+]
+
+[[package]]
 name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -724,6 +733,7 @@ dependencies = [
  "cfg-if",
  "console_error_panic_hook",
  "env_logger",
+ "fastrand",
  "futures",
  "js-sys",
  "lca-core",
@@ -752,6 +762,7 @@ dependencies = [
  "log",
  "pollster",
  "serde",
+ "serde_json",
  "thiserror 1.0.69",
  "tokio",
  "wasm-bindgen",
@@ -1151,6 +1162,7 @@ version = "1.0.140"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20068b6e96dc6c9bd23e01df8827e6c7e1f2fddd43c21810382803c136b99373"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "ryu",

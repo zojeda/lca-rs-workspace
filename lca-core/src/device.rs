@@ -53,7 +53,7 @@ impl GpuDevice {
     pub fn create_vector(
         &self,
         label: &str,
-        data: &[f32], // Allow specifying usage
+        data: &[f64], // Allow specifying usage
     ) -> Result<GpuVector, LcaCoreError> {
         let size = data.len();
         if size == 0 {
@@ -93,7 +93,7 @@ impl GpuDevice {
             | wgpu::BufferUsages::COPY_SRC
             | wgpu::BufferUsages::COPY_DST;
 
-        let byte_size = (size * mem::size_of::<f32>()) as u64;
+        let byte_size = (size * mem::size_of::<f64>()) as u64;
         let label_str = String::from(label);
         let buffer = self.context.create_empty_buffer(
             &label_str,
@@ -114,7 +114,7 @@ impl GpuDevice {
         ))
     }
 
-    /// Creates a SparseMatrixGpu from a CPU SparseMatrix<f32>.
+    /// Creates a SparseMatrixGpu from a CPU SparseMatrix<f64>.
     pub fn create_sparse_matrix(
         &self,
         cpu_matrix: &SparseMatrix,
@@ -166,10 +166,10 @@ impl GpuDevice {
     // --- Operations ---
 
     /// Performs `y = alpha * x + y` on the GPU (axpy).
-    /// Currently only supports f32.
+    /// Currently only supports f64.
     pub async fn axpy(
         &self,
-        alpha: f32,
+        alpha: f64,
         x: &GpuVector,
         y: &mut GpuVector,
     ) -> Result<(), LcaCoreError> {
@@ -185,8 +185,8 @@ impl GpuDevice {
     }
 
     /// Calculates the dot product `x^T * y` on the GPU.
-    /// Currently only supports f32.
-    pub async fn dot(&self, x: &GpuVector, y: &GpuVector) -> Result<f32, LcaCoreError> {
+    /// Currently only supports f64.
+    pub async fn dot(&self, x: &GpuVector, y: &GpuVector) -> Result<f64, LcaCoreError> {
         if x.size() != y.size() {
             return Err(LcaCoreError::InvalidDimensions(format!(
                 "Vector sizes for dot product mismatch: {} != {}",
@@ -257,7 +257,7 @@ impl GpuDevice {
                             },
                             count: None,
                         },
-                        // values (f32)
+                        // values (f64)
                         wgpu::BindGroupLayoutEntry {
                             binding: 2,
                             visibility: wgpu::ShaderStages::COMPUTE,
@@ -268,7 +268,7 @@ impl GpuDevice {
                             },
                             count: None,
                         },
-                        // diagonal_output (f32)
+                        // diagonal_output (f64)
                         wgpu::BindGroupLayoutEntry {
                             binding: 3,
                             visibility: wgpu::ShaderStages::COMPUTE,
@@ -397,7 +397,7 @@ impl GpuDevice {
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("Invert Elements Bind Group Layout"), // Corrected label type
                     entries: &[
-                        // input_vector (f32)
+                        // input_vector (f64)
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
                             visibility: wgpu::ShaderStages::COMPUTE,
@@ -408,7 +408,7 @@ impl GpuDevice {
                             },
                             count: None,
                         },
-                        // output_vector (f32)
+                        // output_vector (f64)
                         wgpu::BindGroupLayoutEntry {
                             binding: 1,
                             visibility: wgpu::ShaderStages::COMPUTE,
@@ -525,7 +525,7 @@ impl GpuDevice {
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("Elementwise Mul Bind Group Layout"),
                     entries: &[
-                        // x (f32)
+                        // x (f64)
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
                             visibility: wgpu::ShaderStages::COMPUTE,
@@ -536,7 +536,7 @@ impl GpuDevice {
                             },
                             count: None,
                         },
-                        // y (f32)
+                        // y (f64)
                         wgpu::BindGroupLayoutEntry {
                             binding: 1,
                             visibility: wgpu::ShaderStages::COMPUTE,
@@ -547,7 +547,7 @@ impl GpuDevice {
                             },
                             count: None,
                         },
-                        // z (f32)
+                        // z (f64)
                         wgpu::BindGroupLayoutEntry {
                             binding: 2,
                             visibility: wgpu::ShaderStages::COMPUTE,

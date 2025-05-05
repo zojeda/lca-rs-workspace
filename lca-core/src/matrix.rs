@@ -5,18 +5,18 @@ use std::sync::Arc;
 
 /// Represents a dense matrix stored in row-major order on the GPU.
 #[derive(Debug)]
-pub struct DenseMatrixf32 {
+pub struct DenseMatrixf64 {
     context: Arc<GpuContext>,
-    buffer: Buffer<f32>,
+    buffer: Buffer<f64>,
     rows: usize,
     cols: usize,
 }
 
-impl DenseMatrixf32 {
-    /// Creates a new DenseMatrixf32 on the GPU from CPU data.
+impl DenseMatrixf64 {
+    /// Creates a new DenseMatrixf64 on the GPU from CPU data.
     pub fn from_data(
         context: Arc<GpuContext>,
-        data: &[f32],
+        data: &[f64],
         rows: usize,
         cols: usize,
     ) -> Result<Self, LsolverError> {
@@ -31,7 +31,7 @@ impl DenseMatrixf32 {
 
         let buffer = Buffer::new_init(
             &context,
-            Some("dense_matrix_f32 buffer"),
+            Some("dense_matrix_f64 buffer"),
             data,
             wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_SRC
@@ -48,7 +48,7 @@ impl DenseMatrixf32 {
 
     /// Reads the matrix data back from the GPU to the CPU.
     /// Note: This is typically slow and should be avoided in performance-critical paths.
-    pub async fn read_back(&self) -> Result<Vec<f32>, LsolverError> {
+    pub async fn read_back(&self) -> Result<Vec<f64>, LsolverError> {
         // Use context's read_buffer_to_cpu instead of removed Buffer::read_contents
         let content = self.context
             .read_buffer_to_cpu(self.buffer.inner(), self.buffer.size())
@@ -57,7 +57,7 @@ impl DenseMatrixf32 {
     }
 
     // --- Getters ---
-    pub fn buffer(&self) -> &Buffer<f32> {
+    pub fn buffer(&self) -> &Buffer<f64> {
         &self.buffer
     }
 
@@ -74,9 +74,9 @@ impl DenseMatrixf32 {
     }
 
     pub fn size_bytes(&self) -> wgpu::BufferAddress {
-        (self.rows * self.cols * std::mem::size_of::<f32>()) as wgpu::BufferAddress
+        (self.rows * self.cols * std::mem::size_of::<f64>()) as wgpu::BufferAddress
     }
 }
 
-// TODO: Add Vector types (potentially reusing DenseMatrixf32 with cols=1 or a dedicated type)
+// TODO: Add Vector types (potentially reusing DenseMatrixf64 with cols=1 or a dedicated type)
 // TODO: Add traits for different matrix properties (Symmetric, PositiveDefinite, etc.) later.

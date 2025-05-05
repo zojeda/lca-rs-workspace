@@ -1,3 +1,6 @@
+
+use std::iter::repeat_with;
+
 // Import necessary types from lca_core
 use lca_core::{
     device::GpuDevice,
@@ -6,8 +9,10 @@ use lca_core::{
     Matrix,
     SparseMatrixGpu, // Use GPU matrix directly
 };
+use fastrand;
+
 // Keep local imports
-use log::{info, warn};
+use log::{info, warn, error};
 // Import local algorithm traits
 use super::{
     // Removed gpu_ops import
@@ -19,19 +24,19 @@ use super::{
 #[derive(Debug, Clone, Copy)]
 pub struct BiCGSTABMetadata {
     pub iterations: usize,
-    pub residual_norm: f32,
+    pub residual_norm: f64,
 }
 
 // Implement for SparseMatrixGpu now
 impl SolveAlgorithm<GpuDevice, SparseMatrixGpu> for BiCGSTAB {
-    type Value = f32;
+    type Value = f64;
     type Metadata = BiCGSTABMetadata;
 
     async fn solve(
         &self,
         device: &GpuDevice,
         a: &SparseMatrixGpu, // Changed input type
-        b: &[f32],           // Keep b as slice, will be uploaded
+        b: &[f64],           // Keep b as slice, will be uploaded
     ) -> Result<SolveResult<Self::Value, Self::Metadata>, LcaCoreError> {
         // Validation
         if a.rows() != b.len() {
@@ -51,8 +56,9 @@ impl SolveAlgorithm<GpuDevice, SparseMatrixGpu> for BiCGSTAB {
 
         // Create GPU vectors for b and x using the device
         let b_gpu = device.create_vector("b_gpu", b)?;
-        // TODO: Initialize x_gpu with zeros if needed. Assuming the demand vector start for now.
-        let mut x_gpu = device.create_vector("x_gpu (initial_guess)", b)?;
+        let mut rng = fastrand::Rng::with_seed(42u64);
+        let x_initial_cpu: Vec<f64>  = repeat_with(|| rng.f64()*2.0-1.0).take(b.len()).collect();
+        let mut x_gpu = device.create_vector("x_gpu (initial_guess_zeros)", &x_initial_cpu)?;
 
         // Use pre-defined parameters
         let max_iterations = self.max_iterations;
@@ -107,10 +113,10 @@ pub(super) async fn gpu_sparse_bicgstab(
     matrix: &SparseMatrixGpu,
     b: &GpuVector,
     x: &mut GpuVector,
-    tolerance: f32,
+    tolerance: f64,
     max_iterations: usize,
     use_preconditioner: bool, // Added flag
-) -> Result<(usize, f32), LcaCoreError> {
+) -> Result<(usize, f64), LcaCoreError> {
     // Context is no longer accessed directly. Use device methods.
     let n = matrix.rows();
     // Dimension checks using GpuVector::size()
@@ -167,10 +173,10 @@ pub(super) async fn gpu_sparse_bicgstab(
     r_hat_0.clone_from(&r)?; // Use internal context
 
     // Initial scalars
-    let mut rho: f32;
-    let mut rho_prev: f32 = 1.0;
-    let mut alpha: f32 = 1.0;
-    let mut omega: f32 = 1.0;
+    let mut rho: f64;
+    let mut rho_prev: f64 = 1.0;
+    let mut alpha: f64 = 1.0;
+    let mut omega: f64 = 1.0;
 
     // Calculate initial residual norm (||r||)
     let r_dot_r = device.dot(&r, &r).await?; // Use device.dot
@@ -193,15 +199,17 @@ pub(super) async fn gpu_sparse_bicgstab(
 
         rho = device.dot(&r_hat_0, &z).await?; // rho = r_hat_0^T * z
 
-        if rho.abs() < f32::EPSILON {
-            warn!(
+        if rho.abs() < f64::EPSILON {
+            error!(
                 "BiCGSTAB breakdown: rho ({}) is near zero at iteration {}",
                 rho, i
             );
-            return Err(LcaCoreError::BiCGSTABBreakdown {
+            return Err(LcaCoreError::AlgorithmBreakdown {
+                algorithm_name: "BiCGSTAB".to_string(),
                 iteration: i,
                 value_name: "rho".to_string(),
                 value: rho,
+                residual: residual_norm,
             });
         }
 
@@ -209,26 +217,30 @@ pub(super) async fn gpu_sparse_bicgstab(
             // p = z
             p.clone_from(&z)?;
         } else {
-            if omega.abs() < f32::EPSILON {
-                warn!(
+            if omega.abs() < f64::EPSILON {
+                error!(
                     "BiCGSTAB breakdown: omega ({}) is near zero at iteration {}",
                     omega, i
                 );
-                return Err(LcaCoreError::BiCGSTABBreakdown {
+                return Err(LcaCoreError::AlgorithmBreakdown {
+                    algorithm_name: "BiCGSTAB".to_string(),
                     iteration: i,
                     value_name: "omega".to_string(),
                     value: omega,
+                    residual: residual_norm,
                 });
             }
-            if rho_prev.abs() < f32::EPSILON {
-                warn!(
+            if rho_prev.abs() < f64::EPSILON {
+                error!(
                     "BiCGSTAB breakdown: rho_prev ({}) is near zero at iteration {}",
                     rho_prev, i
                 );
-                return Err(LcaCoreError::BiCGSTABBreakdown {
+                return Err(LcaCoreError::AlgorithmBreakdown {
+                    algorithm_name: "BiCGSTAB".to_string(),
                     iteration: i,
                     value_name: "rho_prev".to_string(),
                     value: rho_prev,
+                    residual: residual_norm,
                 });
             }
             let beta = (rho / rho_prev) * (alpha / omega);
@@ -251,15 +263,17 @@ pub(super) async fn gpu_sparse_bicgstab(
         matrix.spmv(&phat, &mut v).await?;
 
         let r_hat_0_dot_v = device.dot(&r_hat_0, &v).await?;
-        if r_hat_0_dot_v.abs() < f32::EPSILON {
-            warn!(
+        if r_hat_0_dot_v.abs() < f64::EPSILON {
+            error!(
                 "BiCGSTAB breakdown: r_hat_0_dot_v ({}) is near zero at iteration {}",
                 r_hat_0_dot_v, i
             );
-            return Err(LcaCoreError::BiCGSTABBreakdown {
+            return Err(LcaCoreError::AlgorithmBreakdown {
+                algorithm_name: "BiCGSTAB".to_string(),
                 iteration: i,
                 value_name: "r_hat_0_dot_v".to_string(),
                 value: r_hat_0_dot_v,
+                residual: residual_norm,
             });
         }
         alpha = rho / r_hat_0_dot_v;
@@ -287,18 +301,20 @@ pub(super) async fn gpu_sparse_bicgstab(
         matrix.spmv(&shat, &mut t).await?;
 
         let t_dot_t = device.dot(&t, &t).await?;
-        if t_dot_t.abs() < f32::EPSILON {
+        if t_dot_t.abs() < f64::EPSILON {
             // Avoid division by zero if t is zero
-            warn!(
+            error!(
                 "BiCGSTAB breakdown: t_dot_t ({}) is near zero at iteration {}",
                 t_dot_t, i
             );
             // If t is zero, omega calculation fails. Can sometimes set omega=0 and continue,
             // but often indicates stagnation. Let's treat as breakdown.
-            return Err(LcaCoreError::BiCGSTABBreakdown {
+            return Err(LcaCoreError::AlgorithmBreakdown {
+                algorithm_name: "BiCGSTAB".to_string(),
                 iteration: i,
                 value_name: "t_dot_t".to_string(),
                 value: t_dot_t,
+                residual: residual_norm,
             });
         }
         let t_dot_s = device.dot(&t, &s).await?;
@@ -325,22 +341,24 @@ pub(super) async fn gpu_sparse_bicgstab(
         }
 
         // Check for stagnation related to omega
-        if omega.abs() < f32::EPSILON {
-            warn!(
+        if omega.abs() < f64::EPSILON {
+            error!(
                 "BiCGSTAB breakdown: omega ({}) is near zero at iteration {}",
                 omega, i
             );
-            return Err(LcaCoreError::BiCGSTABBreakdown {
+            return Err(LcaCoreError::AlgorithmBreakdown {
+                algorithm_name: "BiCGSTAB".to_string(),
                 iteration: i,
                 value_name: "omega".to_string(),
                 value: omega,
+                residual: residual_norm,
             });
         }
 
         rho_prev = rho;
 
         if i == max_iterations {
-            warn!(
+            error!(
                 "BiCGSTAB reached maximum iterations ({}) without converging. Residual norm: {}",
                 max_iterations, residual_norm
             );
