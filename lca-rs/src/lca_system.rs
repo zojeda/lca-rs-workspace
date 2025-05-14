@@ -1,4 +1,4 @@
-use lca_core::{GpuDevice, Matrix, SparseMatrix, sparse_matrix::Triplete};
+use lca_core::{GpuDevice, SparseMatrix, sparse_matrix::Triplete}; // Removed Matrix
 use lca_lsolver::algorithms::{BiCGSTAB, SolveAlgorithm}; // Added QMR here and SolveResult
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -34,7 +34,8 @@ pub struct LcaSystem {
     pub a_matrix: LcaMatrix,
     pub b_matrix: LcaMatrix,
     pub c_matrix: LcaMatrix,
-    pub evaluation_demand_process_names: Option<Vec<String>>,
+    pub evaluation_demand: Option<Vec<String>>,
+    pub evaluation_methods: Option<Vec<String>>,
     pub a_links: Vec<InterSystemLink>,
     pub b_links: Vec<InterSystemLink>,
     pub c_links: Vec<InterSystemLink>,
@@ -43,12 +44,12 @@ pub struct LcaSystem {
 #[cfg_attr(feature = "wasm", wasm_bindgen)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DemandItem {
-    pub(crate) product: String,
-    pub(crate) amount: f64,
+    pub product: String, // Made pub
+    pub amount: f64,    // Made pub
 }
 
 impl DemandItem {
-    pub fn new(product: String, amount: f64) -> Self {
+    pub fn new(product: String, amount: f64) -> Self { // new is already pub
         Self { product, amount }
     }
 }
@@ -60,7 +61,8 @@ impl LcaSystem {
         a_matrix: LcaMatrix,
         b_matrix: LcaMatrix,
         c_matrix: LcaMatrix,
-        evaluation_demand_process_names: Option<Vec<String>>,
+        evaluation_demand: Option<Vec<String>>,
+        evaluation_methods: Option<Vec<String>>,
         a_links: Vec<InterSystemLink>,
         b_links: Vec<InterSystemLink>,
         c_links: Vec<InterSystemLink>,
@@ -71,7 +73,8 @@ impl LcaSystem {
             a_matrix,
             b_matrix,
             c_matrix,
-            evaluation_demand_process_names,
+            evaluation_demand,
+            evaluation_methods,
             a_links,
             b_links,
             c_links,
@@ -93,7 +96,7 @@ impl LcaSystem {
     }
     #[cfg(not(target_arch = "wasm32"))]
     pub fn evaluation_demand_process_names(&self) -> &Option<Vec<String>> {
-        &self.evaluation_demand_process_names
+        &self.evaluation_demand
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -141,6 +144,9 @@ impl LcaSystem {
         let new_c_matrix = if let Some(methods) = methods {
             let filtered_c_matrix = self.c_matrix.clone().filter_rows(methods)?;
             filtered_c_matrix
+        } else if let Some(methods) = self.evaluation_methods.clone() {
+            let filtered_c_matrix = self.c_matrix.clone().filter_rows(methods)?;
+            filtered_c_matrix
         } else {
             self.c_matrix.clone()
         };
@@ -165,7 +171,7 @@ impl LcaSystem {
             }
             _ => {
                 // Covers None or Some(empty_vec)
-                if let Some(evaluation_demand_process_names) = &self.evaluation_demand_process_names
+                if let Some(evaluation_demand_process_names) = &self.evaluation_demand
                 {
                     if !evaluation_demand_process_names.is_empty() {
                         log::info!(
@@ -250,9 +256,10 @@ impl LcaSystem {
             "C",
         )?;
 
+        // Combine evaluation demand names
         let mut combined_eval_demand_names_set = HashSet::new();
         for sys in &systems {
-            if let Some(names) = &sys.evaluation_demand_process_names {
+            if let Some(names) = &sys.evaluation_demand {
                 for local_name in names {
                     // Ensure namespacing for demand names
                     combined_eval_demand_names_set.insert(format!("{}::{}", sys.name, local_name));
@@ -266,6 +273,22 @@ impl LcaSystem {
             Some(combined_eval_demand_names_set.into_iter().collect())
         };
 
+        // Combine evaluation methods
+        let mut combined_eval_methods_set = HashSet::new(); 
+        for sys in &systems {
+            if let Some(methods) = &sys.evaluation_methods {
+                for method in methods {
+                    combined_eval_methods_set.insert(method.clone());
+                }
+            }
+        }
+        let final_eval_methods = if combined_eval_methods_set.is_empty() {
+            None
+        } else {
+            Some(combined_eval_methods_set.into_iter().collect())
+        };
+
+
         // Create a meaningful name for the combined system
         let combined_system_name = systems.iter().map(|s| s.name.as_str()).collect::<Vec<&str>>().join("_plus_");
 
@@ -274,7 +297,8 @@ impl LcaSystem {
             a_matrix: combined_a_matrix,
             b_matrix: combined_b_matrix,
             c_matrix: combined_c_matrix,
-            evaluation_demand_process_names: final_eval_demand_names,
+            evaluation_demand: final_eval_demand_names,
+            evaluation_methods: final_eval_methods,
             a_links: Vec::new(), // Links are resolved into the new matrices
             b_links: Vec::new(),
             c_links: Vec::new(),
@@ -520,6 +544,7 @@ mod tests {
         b_triplets: Vec<(usize, usize, f64)>, // (sub_idx, proc_idx, val)
         c_triplets: Vec<(usize, usize, f64)>, // (impact_idx, sub_idx, val)
         eval_demands: Option<Vec<String>>, // Local process names like "Proc0"
+        eval_methods: Option<Vec<String>>, // Local demand names like "Impact0"
         a_links: Vec<InterSystemLink>,
         b_links: Vec<InterSystemLink>,
         c_links: Vec<InterSystemLink>,
@@ -546,6 +571,7 @@ mod tests {
             b_lca_matrix,
             c_lca_matrix,
             eval_demands,
+            eval_methods,
             a_links,
             b_links,
             c_links,
@@ -567,12 +593,16 @@ mod tests {
             vec![(0,0,1.0), (1,1,1.0)], // A
             vec![(0,0,0.5)],             // B (Sub0-Proc0)
             vec![(0,0,2.0)],             // C (Impact0-Sub0)
-            Some(vec!["Proc0".to_string()]), vec![], vec![], vec![]
+            Some(vec!["Proc0".to_string()]),
+            Some(vec!["Impact0".to_string()]), // Evaluation methods
+            vec![], vec![], vec![]
         );
         let sys_b = create_test_system(
             "SysB", 1, 1, 1,
             vec![(0,0,1.0)], vec![(0,0,0.2)], vec![(0,0,3.0)],
-            Some(vec!["Proc0".to_string()]), vec![], vec![], vec![]
+            Some(vec!["Proc0".to_string()]),
+            Some(vec!["Impact0".to_string()]), // Evaluation methods
+            vec![], vec![], vec![]
         );
 
         let combined = LcaSystem::combine(vec![sys_a, sys_b]).unwrap();
@@ -599,7 +629,7 @@ mod tests {
         assert_eq!(get_matrix_value(&combined.c_matrix, "SysB::Impact0", "SysB::Sub0"), Some(3.0));
 
         // Eval demands
-        let eval_demands_set: HashSet<String> = combined.evaluation_demand_process_names.unwrap().into_iter().collect();
+        let eval_demands_set: HashSet<String> = combined.evaluation_demand.unwrap().into_iter().collect();
         let expected_eval_demands: HashSet<String> = ["SysA::Proc0", "SysB::Proc0"].iter().map(|s| s.to_string()).collect();
         assert_eq!(eval_demands_set, expected_eval_demands);
 
@@ -608,10 +638,13 @@ mod tests {
 
     #[test]
     fn test_combine_with_a_links() {
-        let sys_a = create_test_system("SysA", 1,0,0, vec![(0,0,1.0)], vec![], vec![], None,
+        let sys_a = create_test_system("SysA", 1,0,0, vec![(0,0,1.0)], vec![], vec![],
+        None,None,
             vec![InterSystemLink::new("Proc0".to_string(), "SysB".to_string(), "Proc0".to_string(), -0.5)],
             vec![], vec![]);
-        let sys_b = create_test_system("SysB", 1,0,0, vec![(0,0,1.0)], vec![], vec![], None, vec![], vec![], vec![]);
+        let sys_b = create_test_system("SysB", 1,0,0, vec![(0,0,1.0)], vec![], vec![], None, 
+        Some(vec!["Impact0".to_string()]), // Evaluation methods,
+        vec![], vec![], vec![]);
         let combined = LcaSystem::combine(vec![sys_a, sys_b]).unwrap();
 
         assert_eq!(get_matrix_value(&combined.a_matrix, "SysA::Proc0", "SysA::Proc0"), Some(1.0));
@@ -621,10 +654,14 @@ mod tests {
 
     #[test]
     fn test_combine_with_b_links() {
-        let sys_a = create_test_system("SysA", 1,1,0, vec![(0,0,1.0)], vec![(0,0,0.1)], vec![], None, vec![],
+        let sys_a = create_test_system("SysA", 1,1,0, vec![(0,0,1.0)], vec![(0,0,0.1)], vec![], 
+        None, None,
+        vec![],
             vec![InterSystemLink::new("Sub0".to_string(), "SysB".to_string(), "Proc0".to_string(), 0.7)],
             vec![]);
-        let sys_b = create_test_system("SysB", 1,1,0, vec![(0,0,1.0)], vec![(0,0,0.2)], vec![], None, vec![], vec![], vec![]);
+        let sys_b = create_test_system("SysB", 1,1,0, vec![(0,0,1.0)], vec![(0,0,0.2)], vec![], 
+        None, None,
+        vec![], vec![], vec![]);
         let combined = LcaSystem::combine(vec![sys_a, sys_b]).unwrap();
 
         assert_eq!(get_matrix_value(&combined.b_matrix, "SysA::Sub0", "SysA::Proc0"), Some(0.1));
@@ -634,9 +671,13 @@ mod tests {
 
     #[test]
     fn test_combine_with_c_links() {
-        let sys_a = create_test_system("SysA", 0,1,1, vec![], vec![], vec![(0,0,10.0)], None, vec![], vec![],
+        let sys_a = create_test_system("SysA", 0,1,1, vec![], vec![], vec![(0,0,10.0)], 
+        None, None, 
+        vec![], vec![],
             vec![InterSystemLink::new("Impact0".to_string(), "SysB".to_string(), "Sub0".to_string(), 1.5)]);
-        let sys_b = create_test_system("SysB", 0,1,1, vec![], vec![], vec![(0,0,20.0)], None, vec![], vec![], vec![]);
+        let sys_b = create_test_system("SysB", 0,1,1, vec![], vec![], vec![(0,0,20.0)], 
+        None, None, 
+        vec![], vec![], vec![]);
         let combined = LcaSystem::combine(vec![sys_a, sys_b]).unwrap();
 
         assert_eq!(get_matrix_value(&combined.c_matrix, "SysA::Impact0", "SysA::Sub0"), Some(10.0));
@@ -646,24 +687,24 @@ mod tests {
 
     #[test]
     fn test_combine_evaluation_demands_logic() {
-        let sys_a = create_test_system("SysA", 1,0,0, vec![(0,0,1.0)], vec![],vec![], Some(vec!["Proc0".to_string()]), vec![],vec![],vec![]);
-        let sys_b = create_test_system("SysB", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, vec![],vec![],vec![]); // No eval demands
-        let sys_c = create_test_system("SysC", 1,0,0, vec![(0,0,1.0)], vec![],vec![], Some(vec!["Proc0".to_string()]), vec![],vec![],vec![]);
+        let sys_a = create_test_system("SysA", 1,0,0, vec![(0,0,1.0)], vec![],vec![], Some(vec!["Proc0".to_string()]), None, vec![],vec![],vec![]);
+        let sys_b = create_test_system("SysB", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, None, vec![],vec![],vec![]); // No eval demands
+        let sys_c = create_test_system("SysC", 1,0,0, vec![(0,0,1.0)], vec![],vec![], Some(vec!["Proc0".to_string()]), None, vec![],vec![],vec![]);
 
         // A and B
         let combined_ab = LcaSystem::combine(vec![sys_a.clone(), sys_b.clone()]).unwrap();
-        let eval_ab_set: HashSet<String> = combined_ab.evaluation_demand_process_names.unwrap().into_iter().collect();
+        let eval_ab_set: HashSet<String> = combined_ab.evaluation_demand.unwrap().into_iter().collect();
         assert_eq!(eval_ab_set, ["SysA::Proc0"].iter().map(|s|s.to_string()).collect::<HashSet<String>>());
 
         // A and C
         let combined_ac = LcaSystem::combine(vec![sys_a.clone(), sys_c.clone()]).unwrap();
-        let eval_ac_set: HashSet<String> = combined_ac.evaluation_demand_process_names.unwrap().into_iter().collect();
+        let eval_ac_set: HashSet<String> = combined_ac.evaluation_demand.unwrap().into_iter().collect();
         assert_eq!(eval_ac_set, ["SysA::Proc0", "SysC::Proc0"].iter().map(|s|s.to_string()).collect::<HashSet<String>>());
 
         // B and B (different instances, but B has no eval demands)
-        let sys_b2 = create_test_system("SysB2", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, vec![],vec![],vec![]);
+        let sys_b2 = create_test_system("SysB2", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, None, vec![],vec![],vec![]);
         let combined_bb2 = LcaSystem::combine(vec![sys_b.clone(), sys_b2.clone()]).unwrap();
-        assert!(combined_bb2.evaluation_demand_process_names.is_none());
+        assert!(combined_bb2.evaluation_demand.is_none());
     }
 
     #[test]
@@ -678,8 +719,8 @@ mod tests {
 
     #[test]
     fn test_combine_duplicate_system_names_error() {
-        let sys_a1 = create_test_system("SysA", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, vec![],vec![],vec![]);
-        let sys_a2 = create_test_system("SysA", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, vec![],vec![],vec![]); // Same name
+        let sys_a1 = create_test_system("SysA", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, None, vec![],vec![],vec![]);
+        let sys_a2 = create_test_system("SysA", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, None, vec![],vec![],vec![]); // Same name
         let result = LcaSystem::combine(vec![sys_a1, sys_a2]);
         match result {
             Err(LcaError::Generic(msg)) => assert_eq!(msg, "Duplicate system name found: SysA. System names must be unique for combination."),
@@ -689,10 +730,10 @@ mod tests {
 
     #[test]
     fn test_combine_link_to_non_existent_target_id_error() {
-        let sys_a = create_test_system("SysA", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None,
+        let sys_a = create_test_system("SysA", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, None,
             vec![InterSystemLink::new("Proc0".to_string(), "SysB".to_string(), "NonExistentProc".to_string(), -0.5)],
             vec![], vec![]);
-        let sys_b = create_test_system("SysB", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, vec![],vec![],vec![]); // SysB only has Proc0
+        let sys_b = create_test_system("SysB", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, None, vec![],vec![],vec![]); // SysB only has Proc0
 
         let result = LcaSystem::combine(vec![sys_a, sys_b]);
         match result {
@@ -707,10 +748,10 @@ mod tests {
     #[test]
     fn test_combine_link_to_non_existent_source_id_error() {
         // Link from SysA::NonExistentProc
-        let sys_a = create_test_system("SysA", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None,
+        let sys_a = create_test_system("SysA", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, None,
             vec![InterSystemLink::new("NonExistentProc".to_string(), "SysB".to_string(), "Proc0".to_string(), -0.5)],
             vec![], vec![]);
-        let sys_b = create_test_system("SysB", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, vec![],vec![],vec![]);
+        let sys_b = create_test_system("SysB", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, None, vec![],vec![],vec![]);
 
         let result = LcaSystem::combine(vec![sys_a, sys_b]);
         match result {
@@ -724,10 +765,10 @@ mod tests {
 
     #[test]
     fn test_combine_link_to_non_existent_target_system_error() {
-        let sys_a = create_test_system("SysA", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None,
+        let sys_a = create_test_system("SysA", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, None,
             vec![InterSystemLink::new("Proc0".to_string(), "SysC".to_string(), "Proc0".to_string(), -0.5)], // SysC not in combination
             vec![], vec![]);
-        let sys_b = create_test_system("SysB", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, vec![],vec![],vec![]);
+        let sys_b = create_test_system("SysB", 1,0,0, vec![(0,0,1.0)], vec![],vec![], None, None, vec![],vec![],vec![]);
 
         let result = LcaSystem::combine(vec![sys_a, sys_b]); // SysC is not included
         match result {

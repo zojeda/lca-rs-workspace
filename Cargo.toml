@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [ "lca-lsolver","lca-lsolver", "lca-rs", "ecospold-parser", "ecoinvent-example"]
+members = [ "lca-lsolver","lca-lsolver", "lca-rs", "lca-webservice", "ecospold-parser", "ecoinvent-example"]
 
 [workspace.dependencies]
 wgpu = "25.0.0" 

@@ -27,6 +27,9 @@ pub enum LcaModelCompilationError {
     #[error("Unresolved internal product reference: {0}")]
     UnresolvedInternalProductRef(String),
 
+    #[error("Unresolved external impact reference: {0}")]
+    UnresolvedExternalImpactRef(String),
+
     #[error("Unresolved internal substance reference: {0}")]
     UnresolvedInternalSubstanceRef(String),
 

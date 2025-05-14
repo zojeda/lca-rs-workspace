@@ -2,7 +2,9 @@ use lca_core::{SparseMatrix, sparse_matrix::Triplete};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::{DemandItem, LcaMatrix, LcaSystem, error::LcaModelCompilationError, lca_system::InterSystemLink};
+use crate::{
+    DemandItem, LcaMatrix, LcaSystem, error::LcaModelCompilationError, lca_system::InterSystemLink,
+};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LcaModel {
     pub database_name: String,
@@ -12,6 +14,7 @@ pub struct LcaModel {
     pub processes: Vec<Process>,
     pub substances: Vec<Substance>,
     pub evaluation_demands: Vec<Vec<DemandItem>>,
+    pub evaluation_impacts: Vec<ImpactRef>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -103,6 +106,12 @@ pub struct Impact {
     pub unit: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ImpactRef {
+    Impact(String),
+    External(ExternalRef),
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SubstanceType {
     Emission,
@@ -130,7 +139,11 @@ impl LcaModel {
         let mut process_map: HashMap<String, usize> = HashMap::with_capacity(num_processes);
         let mut process_ids: Vec<String> = Vec::with_capacity(num_processes);
         for (i, process) in self.processes.iter().enumerate() {
-          let process_product_id = format!("{}|{}", process.name.clone(), process.products[0].product.name);
+            let process_product_id = format!(
+                "{}|{}",
+                process.name.clone(),
+                process.products[0].product.name
+            );
             if process_map.insert(process_product_id.clone(), i).is_some() {
                 return Err(LcaModelCompilationError::DuplicateProcessName(
                     process.name.clone(),
@@ -140,8 +153,50 @@ impl LcaModel {
         }
 
         // --- Initialize for Evaluation Demands ---
-        let evaluation_demand_process_names_for_system: Vec<String> = Vec::new();
-        let current_eval_demand_idx_offset = 0;
+        let mut evaluation_demand: Vec<String> = Vec::new();
+        let mut evaluation_methods: Vec<String> = Vec::new();
+
+        // --- Populate Evaluation Demands ---
+        for demand_group in &self.evaluation_demands {
+            for demand_item in demand_group {
+                if !process_map.contains_key(&demand_item.product) {
+                    return Err(LcaModelCompilationError::UnresolvedInternalProductRef(
+                        demand_item.product.clone(),
+                    ));
+                }
+                evaluation_demand.push(demand_item.product.clone());
+            }
+        }
+
+        // --- Populate Evaluation Methods ---
+        for impact_ref in &self.evaluation_impacts {
+            match impact_ref {
+                ImpactRef::Impact(impact_name) => {
+                    if !evaluation_methods.contains(impact_name) {
+                        evaluation_methods.push(impact_name.clone());
+                    }
+                }
+                ImpactRef::External(ext_ref) => {
+                    let db = self
+                        .imported_dbs
+                        .iter()
+                        .find(|db| db.alias == ext_ref.alias)
+                        .ok_or_else(|| {
+                            LcaModelCompilationError::UnresolvedExternalImpactRef(
+                                ext_ref.alias.clone(),
+                            )
+                        })?;
+                    let complete_external_name = format!("{}:{}", db.name, ext_ref.name);
+                    if !evaluation_methods.contains(&complete_external_name) {
+                        evaluation_methods.push(complete_external_name);
+                    }
+                }
+            }
+        }
+
+        // --- Initialize Substance and Impact Mappings ---
+
+
 
         let mut substance_map: HashMap<String, usize> = HashMap::with_capacity(num_substances);
         let mut substance_ids: Vec<String> = Vec::with_capacity(num_substances);
@@ -192,12 +247,12 @@ impl LcaModel {
                 ));
             }
             if process.products.len() > 1 {
-              return Err(LcaModelCompilationError::MultiProductUnsupported(
-                process.name.clone(),
-              ));
+                return Err(LcaModelCompilationError::MultiProductUnsupported(
+                    process.name.clone(),
+                ));
             }
             let output = &process.products[0];
-            
+
             let amount = output.amount.evaluate()?;
             if amount <= 0.0 {
                 return Err(LcaModelCompilationError::NonPositiveProductAmount(
@@ -234,8 +289,17 @@ impl LcaModel {
                         let amount_val = amount; // Already evaluated amount for the input
                         unlinked_inputs.push(ext_ref.clone());
                         a_links_data.push(InterSystemLink {
-                            local_source_row_id: format!("{}|{}", process.name.clone(), output.product.name),
-                            target_system_name: self.imported_dbs.iter().find(|db| db.alias == ext_ref.alias).map(|db| db.name.clone()).unwrap_or_else(|| ext_ref.alias.clone()),
+                            local_source_row_id: format!(
+                                "{}|{}",
+                                process.name.clone(),
+                                output.product.name
+                            ),
+                            target_system_name: self
+                                .imported_dbs
+                                .iter()
+                                .find(|db| db.alias == ext_ref.alias)
+                                .map(|db| db.name.clone())
+                                .unwrap_or_else(|| ext_ref.alias.clone()),
                             target_system_row_id: ext_ref.name.clone(),
                             value: -amount_val, // Inputs to A matrix are typically negative
                         });
@@ -272,7 +336,7 @@ impl LcaModel {
             }
         }
 
-        let total_num_processes = num_processes + current_eval_demand_idx_offset; // current_eval_demand_idx_offset is now always 0
+        let total_num_processes = num_processes; // current_eval_demand_idx_offset is now always 0
 
         // --- Create Sparse Matrices ---
         // Use ? to propagate potential errors from from_triplets
@@ -303,15 +367,18 @@ impl LcaModel {
         // --- Create LcaSystem ---
         let c_links_data: Vec<InterSystemLink> = Vec::new(); // As per "ignore for now"
 
+
+
         let compiled_system = LcaSystem::new(
             self.database_name.clone(),
             a_lca_matrix,
             b_lca_matrix,
             c_lca_matrix,
-            Some(evaluation_demand_process_names_for_system),
+            Some(evaluation_demand),
+            Some(evaluation_methods),
             a_links_data,
             b_links_data,
-            c_links_data
+            c_links_data,
         )
         .map_err(|e| LcaModelCompilationError::UnableToLcaSystem(format!("System: {}", e)))?;
 
@@ -405,8 +472,10 @@ mod tests {
                 },
             ],
             evaluation_demands: vec![demand.clone()],
+            evaluation_impacts: vec![ImpactRef::Impact("GWP100".to_string())],
         };
 
+        println!("model: {}", serde_json::to_string_pretty(&model).unwrap());
         let compile_result = model.compile();
 
         assert!(
@@ -454,7 +523,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .len(),
-            0 // Expect 0 evaluation demand processes in the system structure itself
+            1 // Expect 1 evaluation demand processes
         );
 
         // Check IDs using accessor methods
@@ -494,15 +563,20 @@ mod tests {
             let result = system
                 .evaluate(
                     &device,
-                    Some(demand.clone()),
-                    Some(vec!["GWP100".to_string()]),
+                    None,
+                    None,
                 )
-                .await.expect("Failed to evaluate LCA model");
+                .await
+                .expect("Failed to evaluate LCA model");
 
             assert_eq!(result.len(), 1, "LCA result should have 1 element");
             let expected_co2 = 66.5; // CO2 emissions from Carbon Fibre production
-            assert!((result[0] - expected_co2).abs() < 1e-3, "LCA result for GWP100 is incorrect. Expected: {}, Got: {}", expected_co2, result[0]);
-
+            assert!(
+                (result[0] - expected_co2).abs() < 1e-3,
+                "LCA result for GWP100 is incorrect. Expected: {}, Got: {}",
+                expected_co2,
+                result[0]
+            );
         })
     }
 
@@ -518,7 +592,8 @@ mod tests {
         let model = LcaModel {
             database_name: "Toaster Example DB".to_string(),
             case_name: "Toaster Lifecycle CO2".to_string(),
-            case_description: "Calculates the total CO2 emissions for a toaster's lifecycle.".to_string(),
+            case_description: "Calculates the total CO2 emissions for a toaster's lifecycle."
+                .to_string(),
             imported_dbs: vec![],
             substances: vec![Substance {
                 name: "CO2".to_string(),
@@ -537,7 +612,9 @@ mod tests {
                 Process {
                     name: "Steel production".to_string(),
                     products: vec![OutputItem {
-                        product: Product { name: "Steel".to_string() },
+                        product: Product {
+                            name: "Steel".to_string(),
+                        },
                         amount: Amount::Literal(1.0),
                         unit: "kg".to_string(),
                     }],
@@ -558,7 +635,9 @@ mod tests {
                 Process {
                     name: "Steam production".to_string(),
                     products: vec![OutputItem {
-                        product: Product { name: "Steam".to_string() },
+                        product: Product {
+                            name: "Steam".to_string(),
+                        },
                         amount: Amount::Literal(1.0), // Produces 1 MJ Steam (reference)
                         unit: "MJ".to_string(),
                     }],
@@ -579,7 +658,9 @@ mod tests {
                 Process {
                     name: "Toaster production".to_string(),
                     products: vec![OutputItem {
-                        product: Product { name: "Toaster".to_string() },
+                        product: Product {
+                            name: "Toaster".to_string(),
+                        },
                         amount: Amount::Literal(1.0), // Produces 1 unit Toaster
                         unit: "unit".to_string(),
                     }],
@@ -607,16 +688,20 @@ mod tests {
                 Process {
                     name: "Toaster use".to_string(),
                     products: vec![OutputItem {
-                        product: Product { name: "Used Toaster".to_string() }, // Represents the service of a used toaster
+                        product: Product {
+                            name: "Used Toaster".to_string(),
+                        }, // Represents the service of a used toaster
                         amount: Amount::Literal(1.0),
                         unit: "unit".to_string(),
                     }],
-                    inputs: vec![InputItem { // Consumes a new toaster
+                    inputs: vec![InputItem {
+                        // Consumes a new toaster
                         product: ProductRef::Product("Toaster production|Toaster".to_string()),
                         amount: Amount::Literal(1.0),
                         unit: "unit".to_string(),
                     }],
-                    emissions: vec![BiosphereItem { // 0.001 kg CO2/piece of bread, assume 1000 pieces
+                    emissions: vec![BiosphereItem {
+                        // 0.001 kg CO2/piece of bread, assume 1000 pieces
                         substance: SubstanceRef::Substance("CO2".to_string()),
                         amount: Amount::Literal(1.0), // 0.001 kg/piece * 1000 pieces
                         unit: "kg".to_string(),
@@ -628,11 +713,14 @@ mod tests {
                 Process {
                     name: "Toaster disposal".to_string(),
                     products: vec![OutputItem {
-                        product: Product { name: "Disposed Toaster".to_string() }, // Final product of the lifecycle
+                        product: Product {
+                            name: "Disposed Toaster".to_string(),
+                        }, // Final product of the lifecycle
                         amount: Amount::Literal(1.0),
                         unit: "unit".to_string(),
                     }],
-                    inputs: vec![InputItem { // Consumes a used toaster
+                    inputs: vec![InputItem {
+                        // Consumes a used toaster
                         product: ProductRef::Product("Toaster use|Used Toaster".to_string()),
                         amount: Amount::Literal(1.0),
                         unit: "unit".to_string(),
@@ -647,6 +735,9 @@ mod tests {
                 },
             ],
             evaluation_demands: vec![demand.clone()],
+            evaluation_impacts: vec![
+                ImpactRef::Impact("GWP100".to_string()), // CO2 emissions
+            ],
         };
 
         let compile_result = model.compile();
@@ -683,7 +774,7 @@ mod tests {
         assert_eq!(system.b_matrix().row_ids(), &["CO2".to_string()]);
         assert_eq!(system.c_matrix().col_ids(), &["CO2".to_string()]);
         assert_eq!(system.c_matrix().row_ids(), &["GWP100".to_string()]);
-        
+
         // Check some key matrix values
         // A Matrix:
         // Steel production (idx 0): Output Steel (A[0,0]=1), Input Steam (A[1,0]=-0.5)
@@ -702,7 +793,7 @@ mod tests {
         // Toaster use (idx 3): Output Used Toaster (A[3,3]=1), Input Toaster (A[2,3]=-1)
         assert_eq!(system.a_matrix().matrix().get(3, 3), Some(1.0));
         assert_eq!(system.a_matrix().matrix().get(2, 3), Some(-1.0));
-        
+
         // Toaster disposal (idx 4): Output Disposed Toaster (A[4,4]=1), Input Used Toaster (A[3,4]=-1)
         assert_eq!(system.a_matrix().matrix().get(4, 4), Some(1.0));
         assert_eq!(system.a_matrix().matrix().get(3, 4), Some(-1.0));
@@ -723,7 +814,6 @@ mod tests {
         // GWP100 from CO2 (C[0,0]=1)
         assert_eq!(system.c_matrix().matrix().get(0, 0), Some(1.0));
 
-
         pollster::block_on(async {
             let device = lca_core::GpuDevice::new()
                 .await
@@ -732,14 +822,24 @@ mod tests {
             let result = system
                 .evaluate(
                     &device,
-                    Some(demand.clone()), // Demand for 1 unit of "Toaster disposal|Disposed Toaster"
-                    Some(vec!["GWP100".to_string()]),
+                    None,
+                    None,
                 )
-                .await.expect("LCA evaluation failed");
+                .await
+                .expect("LCA evaluation failed");
 
-            assert_eq!(result.len(), 1, "LCA result should have 1 element for the GWP100 impact");
+            assert_eq!(
+                result.len(),
+                1,
+                "LCA result should have 1 element for the GWP100 impact"
+            );
             let expected_co2 = 65.5 / 7.0;
-            assert!((result[0] - expected_co2).abs() < 1e-9, "LCA result for GWP100 is incorrect. Expected: {}, Got: {}", expected_co2, result[0]);
+            assert!(
+                (result[0] - expected_co2).abs() < 1e-9,
+                "LCA result for GWP100 is incorrect. Expected: {}, Got: {}",
+                expected_co2,
+                result[0]
+            );
         })
     }
 }

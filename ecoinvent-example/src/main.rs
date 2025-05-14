@@ -83,6 +83,7 @@ fn create_water_botle_lca_system() -> Result<lca_rs::LcaSystem, Box<dyn Error>> 
         }],
         substances: vec![], // Remove dummy substance
         evaluation_demands: vec![],
+        evaluation_impacts: vec![],
         processes: vec![
           Process {
             name: "water bottle production".to_string(),
@@ -169,6 +170,7 @@ fn load_ecoinvent_lca_system() -> Result<lca_rs::LcaSystem, Box<dyn Error>> {
         a_matrix,
         b_matrix,
         c_matrix,
+        None,
         None,
         vec![],
         vec![],
