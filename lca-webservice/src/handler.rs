@@ -8,7 +8,7 @@ use crate::{
 use axum_streams::StreamBodyAs;
 // Removed: use futures::stream::Stream; 
 use lca_core::GpuDevice;
-use lca_rs::model::LcaModel;
+use lca_rs::{model::LcaModel, EvalLCASystem};
 use serde::Serialize;
 // Removed std::convert::Infallible
 use std::sync::Arc;
@@ -164,7 +164,8 @@ pub async fn calculate_lca_handler(
         // Note: lca_system.evaluate takes demand and methods as Option<Vec<...>>
         // For now, we'll pass None, meaning it uses default demands from the model if any.
         // This could be parameterized in LcaRequest later.
-        match lca_system.evaluate(device.as_ref(), None, None).await {
+        let eval_system: EvalLCASystem = lca_system.try_into().unwrap();
+        match eval_system.evaluate(device.as_ref()).await {
             Ok(results) => {
                 tracing::info!(target: "lca_webservice::handler", "LCA evaluation completed successfully. Results: {:?}", results.len());
                 let success_payload = ProgressUpdate {

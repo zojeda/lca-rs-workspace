@@ -1,3 +1,4 @@
+use lca_core::DemandItem;
 use serde::{Deserialize, Serialize};
 use serde_json::json; // Added for json! macro in schema example
 use utoipa::ToSchema;
@@ -455,8 +456,8 @@ impl From<SubstanceTypeRequest> for lca_rs::model::SubstanceType {
     }
 }
 
-impl From<DemandItemRequest> for lca_rs::DemandItem { // DemandItem is pub use lca_rs::DemandItem;
+impl From<DemandItemRequest> for DemandItem { // DemandItem is pub use lca_rs::DemandItem;
     fn from(req: DemandItemRequest) -> Self {
-        lca_rs::DemandItem::new(req.product, req.amount)
+        DemandItem::new(req.product, req.amount)
     }
 }

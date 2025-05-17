@@ -1,11 +1,10 @@
-mod lca_matrix;
-mod lca_system;
+mod eval_lca_system;
 
 pub mod error;
 pub mod model;
+pub use eval_lca_system::EvalLCASystem;
+pub use error::LcaError;
 
-pub use lca_matrix::LcaMatrix;
-pub use lca_system::{DemandItem, LcaSystem};
 
 #[cfg(feature = "wasm")]
 use console_error_panic_hook;

@@ -1,25 +1,24 @@
 use std::collections::HashSet;
 
-use lca_core::{SparseMatrix, sparse_matrix::Triplete};
-
-use crate::error::Result;
 
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
+use crate::{error::Result, sparse_matrix::Triplete, SparseMatrix};
+
 #[cfg_attr(feature = "wasm", wasm_bindgen)]
 #[derive(Debug, Clone)]
 pub struct LcaMatrix {
-    pub(crate) matrix: SparseMatrix,
-    pub(crate) col_ids: Vec<String>,
-    pub(crate) row_ids: Vec<String>,
+    pub matrix: SparseMatrix,
+    pub col_ids: Vec<String>,
+    pub row_ids: Vec<String>,
 }
 
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 impl LcaMatrix {
     pub fn new(matrix: SparseMatrix, col_ids: Vec<String>, row_ids: Vec<String>) -> Result<Self> {
         if matrix.cols() != col_ids.len() {
-            return Err(crate::error::LcaError::DimensionError(format!(
+            return Err(crate::error::LcaCoreError::DimensionError(format!(
                 "Matrix columns ({}) must match column IDs length ({})",
                 matrix.cols(),
                 col_ids.len()
@@ -27,7 +26,7 @@ impl LcaMatrix {
             .into());
         }
         if matrix.rows() != row_ids.len() {
-            return Err(crate::error::LcaError::DimensionError(format!(
+            return Err(crate::error::LcaCoreError::DimensionError(format!(
                 "Matrix rows ({}) must match row IDs length ({})",
                 matrix.rows(),
                 row_ids.len()
@@ -45,7 +44,7 @@ impl LcaMatrix {
         &self.matrix
     }
 
-    pub fn filter_rows(self, keep_rows: Vec<String>) -> Result<Self> {
+    pub fn filter_rows(&self, keep_rows: &[String]) -> Result<Self> {
         let mut new_row_ids = HashSet::new();
         let mut triplets = Vec::new();
         // Iterate over the rows and keep only the specified ones, creating a triplets list for the new matrix

@@ -19,6 +19,7 @@ pub enum LcaError {
     #[from]
     LcaCoreError(LcaCoreError),
 
+    
     #[from]
     LcaModelCompilationError(LcaModelCompilationError),
 

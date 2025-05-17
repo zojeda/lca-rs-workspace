@@ -1,8 +1,8 @@
 use std::{error::Error, vec}; // Added exit for handling breakdown
 
-use lca_core::{GpuDevice, SparseMatrix, sparse_matrix::Triplete}; // Added LsolverError
+use lca_core::{sparse_matrix::Triplete, DemandItem, GpuDevice, LcaMatrix, LcaSystem, SparseMatrix}; // Added LsolverError
 use lca_rs::{
-    human_size, model::{Amount, DbImport, ExternalRef, InputItem, LcaModel, OutputItem, Process, Product, ProductRef}, DemandItem, LcaMatrix, LcaSystem
+    human_size, model::{Amount, DbImport, ExternalRef, InputItem, LcaModel, OutputItem, Process, Product, ProductRef}, EvalLCASystem
 };
 
 #[tokio::main]
@@ -44,19 +44,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         1.0,
     )];
     let start_time = std::time::Instant::now();
-    let lca_result = lca_system
-        .evaluate(
-            &gpu,
-            Some(demand),
-            Some(vec![
-                // Restore original requested methods
-                "ecoinvent-3.11::EF v3.1|climate change|global warming potential (GWP100)".to_string(),
-                "ecoinvent-3.11::EF v3.1|climate change: biogenic|global warming potential (GWP100)".to_string(),
-                "ecoinvent-3.11::EF v3.1|climate change: fossil|global warming potential (GWP100)".to_string(),
-                "ecoinvent-3.11::EF v3.1|climate change: land use and land use change|global warming potential (GWP100)".to_string(),
+    let eval_system: EvalLCASystem = lca_system.try_into()?;
+    let eval_system = eval_system
+      .with_demand(demand)
+      .with_evaluation_methods(vec![
+        "ecoinvent-3.11::EF v3.1|climate change|global warming potential (GWP100)".to_string(),
+        "ecoinvent-3.11::EF v3.1|climate change: biogenic|global warming potential (GWP100)".to_string(),
+        "ecoinvent-3.11::EF v3.1|climate change: fossil|global warming potential (GWP100)".to_string(),
+        "ecoinvent-3.11::EF v3.1|climate change: land use and land use change|global warming potential (GWP100)".to_string(),
+      ]);
 
-            ]),
-        )
+    let lca_result = eval_system
+        .evaluate(&gpu)
         .await?;
     let elapsed_time = start_time.elapsed();
     println!("Elapsed time: {:?}", elapsed_time);
@@ -72,7 +71,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn create_water_botle_lca_system() -> Result<lca_rs::LcaSystem, Box<dyn Error>> {
+fn create_water_botle_lca_system() -> Result<LcaSystem, Box<dyn Error>> {
     let model = LcaModel {
         case_name: "water bottle production".to_string(),
         case_description: "Water bottle LCA Description".to_string(),
@@ -144,7 +143,7 @@ fn create_water_botle_lca_system() -> Result<lca_rs::LcaSystem, Box<dyn Error>> 
 
 }
 
-fn load_ecoinvent_lca_system() -> Result<lca_rs::LcaSystem, Box<dyn Error>> {
+fn load_ecoinvent_lca_system() -> Result<LcaSystem, Box<dyn Error>> {
     // Read matrices without regularization
     let a_matrix = read_sparse_matrix("universal_matrix_export/A_public.csv", None)?;
     println!("Matrix A: {:?}", a_matrix.dims());
@@ -165,7 +164,7 @@ fn load_ecoinvent_lca_system() -> Result<lca_rs::LcaSystem, Box<dyn Error>> {
     let row_ids = read_dim_ids("universal_matrix_export/LCIA_index.csv", &[0, 1, 2])?;
     let c_matrix = LcaMatrix::new(c_matrix, col_ids, row_ids)?;
 
-    let lca_system = lca_rs::LcaSystem::new(
+    let lca_system = LcaSystem::new(
         "ecoinvent-3.11".to_string(),
         a_matrix,
         b_matrix,

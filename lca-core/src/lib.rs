@@ -12,8 +12,13 @@ pub mod ops; // Keep internal ops module private for now
 pub mod traits;
 pub mod vector;
 
+mod lca_matrix;
+mod lca_system;
+
 // Re-export public types
 // GpuContext is now internal
+pub use lca_matrix::LcaMatrix;
+pub use lca_system::{LcaSystem, DemandItem, InterSystemLink};
 pub use device::GpuDevice; // Export the main entry point
 pub use error::LcaCoreError;
 pub use sparse_matrix::{SparseMatrix, SparseMatrixGpu}; // Keep SparseMatrixGpu public for now, might revisit

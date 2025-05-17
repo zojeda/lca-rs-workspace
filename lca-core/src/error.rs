@@ -3,8 +3,21 @@ use thiserror::Error;
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
+pub type Result<T> = core::result::Result<T, LcaCoreError>;
+
 #[derive(Error, Debug)]
 pub enum LcaCoreError {
+
+
+    #[error("Generic: {0}")]
+    Generic(String),
+
+    #[error("LinkError: {0}")]
+    LinkError(String),
+
+    #[error("DimensionError: {0}")]
+    DimensionError(String),
+
     #[error("WGPU initialization failed: {0}")]
     WgpuInitError(String),
 

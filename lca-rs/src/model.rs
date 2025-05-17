@@ -1,10 +1,10 @@
-use lca_core::{SparseMatrix, sparse_matrix::Triplete};
+use lca_core::{sparse_matrix::Triplete, DemandItem, InterSystemLink, LcaMatrix, LcaSystem, SparseMatrix};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::{
-    DemandItem, LcaMatrix, LcaSystem, error::LcaModelCompilationError, lca_system::InterSystemLink,
-};
+use crate::error::LcaModelCompilationError;
+
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LcaModel {
     pub database_name: String,
@@ -153,7 +153,7 @@ impl LcaModel {
         }
 
         // --- Initialize for Evaluation Demands ---
-        let mut evaluation_demand: Vec<String> = Vec::new();
+        let mut evaluation_demand: Vec<DemandItem> = Vec::new();
         let mut evaluation_methods: Vec<String> = Vec::new();
 
         // --- Populate Evaluation Demands ---
@@ -164,7 +164,7 @@ impl LcaModel {
                         demand_item.product.clone(),
                     ));
                 }
-                evaluation_demand.push(demand_item.product.clone());
+                evaluation_demand.push(demand_item.clone());
             }
         }
 
@@ -389,7 +389,7 @@ impl LcaModel {
 #[cfg(test)]
 mod tests {
 
-    use crate::DemandItem;
+    use crate::{eval_lca_system::EvalLCASystem};
 
     use super::*; // Import items from parent module (model.rs)
 
@@ -519,7 +519,7 @@ mod tests {
         // Check evaluation demand process names
         assert_eq!(
             system
-                .evaluation_demand_process_names()
+                .demands()
                 .as_ref()
                 .unwrap()
                 .len(),
@@ -560,12 +560,9 @@ mod tests {
                 .await
                 .expect("Failed to create GPU device");
 
-            let result = system
-                .evaluate(
-                    &device,
-                    None,
-                    None,
-                )
+            let eval_system: EvalLCASystem = system.try_into().unwrap();
+            let result = eval_system
+                .evaluate(&device)
                 .await
                 .expect("Failed to evaluate LCA model");
 
@@ -819,12 +816,10 @@ mod tests {
                 .await
                 .expect("Failed to create GPU device");
 
-            let result = system
-                .evaluate(
-                    &device,
-                    None,
-                    None,
-                )
+            let eval_system: EvalLCASystem = system.try_into().unwrap();
+
+            let result = eval_system
+              .evaluate(&device)
                 .await
                 .expect("LCA evaluation failed");
 
