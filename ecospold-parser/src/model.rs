@@ -1,23 +1,19 @@
 // ecospold-parser/src/model.rs
-use serde::Deserialize;
-// serde_json::Value import removed
-
-// Using quick_xml::de attributes for XML mappin:g
-// Renaming attributes and elements to match Rust conventions (snake_case)
-// Using Option<T> for optional attributes/elements
+use serde::{Deserialize, Deserializer};
+use std::str::FromStr;
 
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct EcoSpold {
-    pub child_activity_dataset: ChildActivityDataset,
-    // Add xmlns attribute if needed, though often handled by parser context
-    // #[serde(rename = "@xmlns")]
-    // pub xmlns: String,
+    pub child_activity_dataset: Option<ActivityDataset>,
+    pub activity_dataset: Option<ActivityDataset>, // Add xmlns attribute if needed, though often handled by parser context
+                                                   // #[serde(rename = "@xmlns")]
+                                                   // pub xmlns: String,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ChildActivityDataset {
+pub struct ActivityDataset {
     pub activity_description: ActivityDescription,
     pub flow_data: FlowData,
     pub modelling_and_validation: ModellingAndValidation,
@@ -62,12 +58,12 @@ pub struct Activity {
     #[serde(rename = "@specialActivityType")]
     pub special_activity_type: i32,
     #[serde(rename = "@energyValues")]
-    pub energy_values: i32,
+    pub energy_values: Option<i32>,
     pub activity_name: TextLang,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub synonym: Vec<TextLang>,
-    pub included_activities_start: TextLang,
-    pub included_activities_end: TextLang,
+    pub included_activities_start: Option<TextLang>,
+    pub included_activities_end: Option<TextLang>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub general_comment: Option<GeneralComment>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -121,7 +117,7 @@ pub struct Geography {
 #[serde(rename_all = "camelCase")]
 pub struct Technology {
     #[serde(rename = "@technologyLevel")]
-    pub technology_level: i32,
+    pub technology_level: Option<i32>,
     #[serde(default, rename = "comment", skip_serializing_if = "Vec::is_empty")]
     pub comments: Vec<Comment>, // Reverted back to Vec<Comment>
 }
@@ -249,6 +245,8 @@ pub struct IntermediateExchange {
     pub output_group: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub production_volume_comment: Option<TextLang>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub production_volume_mathematical_relation: Option<TextLang>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -322,7 +320,7 @@ pub struct Parameter {
     #[serde(rename = "@parameterId")]
     pub parameter_id: String,
     #[serde(rename = "@variableName")]
-    pub variable_name: String,
+    pub variable_name: Option<String>,
     #[serde(rename = "@amount")]
     pub amount: f64,
     #[serde(
@@ -335,7 +333,7 @@ pub struct Parameter {
     pub is_calculated_amount: bool,
 
     pub name: TextLang,
-    pub unit_name: TextLang,
+    pub unit_name: Option<TextLang>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uncertainty: Option<Uncertainty>,
     #[serde(default, rename = "comment", skip_serializing_if = "Vec::is_empty")]
@@ -419,7 +417,7 @@ pub struct Property {
     pub variable_name: Option<String>,
 
     pub name: TextLang,
-    pub unit_name: TextLang,
+    pub unit_name: Option<TextLang>,
     #[serde(default, rename = "comment", skip_serializing_if = "Vec::is_empty")]
     pub comments: Vec<TextLang>, // Reverted to Vec<TextLang>
 }
@@ -451,8 +449,8 @@ pub struct Representativeness {
     #[serde(rename = "@systemModelId")]
     pub system_model_id: String,
     pub system_model_name: TextLang,
-    pub sampling_procedure: TextLang,
-    pub extrapolations: TextLang,
+    pub sampling_procedure: Option<TextLang>,
+    pub extrapolations: Option<TextLang>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -518,14 +516,22 @@ pub struct DataGeneratorAndPublication {
     pub person_name: String,
     #[serde(rename = "@personEmail")]
     pub person_email: String,
-    #[serde(rename = "@dataPublishedIn")]
-    pub data_published_in: i32,
+    #[serde(
+        rename = "@dataPublishedIn",
+        deserialize_with = "deserialize_trimmed_option_i32",
+        default
+    )]
+    pub data_published_in: Option<i32>,
     #[serde(rename = "@publishedSourceId")]
-    pub published_source_id: String,
-    #[serde(rename = "@publishedSourceYear")]
-    pub published_source_year: i32,
+    pub published_source_id: Option<String>,
+    #[serde(
+        rename = "@publishedSourceYear",
+        deserialize_with = "deserialize_trimmed_option_i32",
+        default
+    )]
+    pub published_source_year: Option<i32>,
     #[serde(rename = "@publishedSourceFirstAuthor")]
-    pub published_source_first_author: String,
+    pub published_source_first_author: Option<String>,
     #[serde(rename = "@isCopyrightProtected")]
     pub is_copyright_protected: bool,
     #[serde(
@@ -536,6 +542,24 @@ pub struct DataGeneratorAndPublication {
     pub page_numbers: Option<String>,
     #[serde(rename = "@accessRestrictedTo")]
     pub access_restricted_to: i32,
+}
+
+fn deserialize_trimmed_option_i32<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    if let Ok(s) = String::deserialize(deserializer) {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            Ok(None)
+        } else {
+            i32::from_str(trimmed).map(Some).map_err(|e| {
+                serde::de::Error::custom(format!("Failed to parse i32: {} | {}", trimmed, e))
+            })
+        }
+    } else {
+        Ok(None)
+    }
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -550,17 +574,17 @@ pub struct FileAttributes {
     #[serde(rename = "@minorRevision")]
     pub minor_revision: i32,
     #[serde(rename = "@internalSchemaVersion")]
-    pub internal_schema_version: String,
+    pub internal_schema_version: Option<String>,
     #[serde(rename = "@defaultLanguage")]
     pub default_language: String,
     #[serde(rename = "@creationTimestamp")]
-    pub creation_timestamp: String, // Consider chrono::DateTime<Utc>
+    pub creation_timestamp: Option<String>, // Consider chrono::DateTime<Utc>
     #[serde(rename = "@lastEditTimestamp")]
-    pub last_edit_timestamp: String, // Consider chrono::DateTime<Utc>
+    pub last_edit_timestamp: Option<String>, // Consider chrono::DateTime<Utc>
     #[serde(rename = "@fileGenerator")]
-    pub file_generator: String,
+    pub file_generator: Option<String>,
     #[serde(rename = "@fileTimestamp")]
-    pub file_timestamp: String, // Consider chrono::DateTime<Utc>
+    pub file_timestamp: Option<String>, // Consider chrono::DateTime<Utc>
     #[serde(rename = "@contextId")]
     pub context_id: String,
     pub context_name: TextLang,

@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, hash::Hash};
+use std::{collections::{HashMap, HashSet}};
 
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "wasm")]

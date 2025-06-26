@@ -1,10 +1,11 @@
 use axum::{routing::get, Router};
 use handler::{sse_handler, test_json_array_stream};
+use model::LcaRequest;
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, fmt};
-use utoipa::OpenApi; // Re-added: Needed for ApiDoc::openapi() trait method
+use utoipa::{OpenApi, PartialSchema}; // Re-added: Needed for ApiDoc::openapi() trait method
 use utoipa_swagger_ui::SwaggerUi;
 
 // Module declarations for our application structure
@@ -41,6 +42,9 @@ async fn main() {
         .allow_origin(Any) // Allow any origin
         .allow_methods(Any) // Allow all methods
         .allow_headers(Any); // Allow all headers
+
+    let schema = LcaRequest::schema(); // Get the schema for LcaRequest
+    println!("Schema for LcaRequest: {}", serde_json::to_string(&schema).unwrap());
 
     // Build our application router
     let app = Router::new()

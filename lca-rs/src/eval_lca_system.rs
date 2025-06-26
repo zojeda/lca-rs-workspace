@@ -1,6 +1,4 @@
-use std::collections::HashSet;
-
-use lca_core::{sparse_matrix::Triplete, DemandItem, GpuDevice, LcaMatrix, LcaSystem, SparseMatrix}; // Removed Matrix
+use lca_core::{DemandItem, GpuDevice, LcaMatrix, LcaSystem, SparseMatrix};
 use lca_lsolver::algorithms::{BiCGSTAB, SolveAlgorithm};
 
 use crate::error::{LcaError, Result};
@@ -310,9 +308,7 @@ async fn calculate_lca(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::LcaError;
-    use lca_core::{InterSystemLink, SparseMatrix, sparse_matrix::Triplete};
-    use std::collections::HashSet;
+    use lca_core::{SparseMatrix, sparse_matrix::Triplete};
 
     #[test]
     fn test_calculate_lca_system() {
