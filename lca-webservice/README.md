@@ -1,38 +1,71 @@
-## Diagram of SSE Flow:
+## LCA Webservice
+
+Axum-based API that compiles and evaluates LCA models from lca-rs, streams progress via SSE, and serves OpenAPI docs.
+
+Status: WIP but runnable. Endpoints: health check, POST /calculate-lca (SSE), /swagger-ui (OpenAPI UI).
+
+## Run
+
+```bash
+cargo run -p lca-webservice
+```
+
+Then open:
+- Swagger UI: http://localhost:3000/swagger-ui
+- Health: http://localhost:3000/
+
+Quick test (curl):
+
+```bash
+curl -N -s -H 'Content-Type: application/json' \
+    -X POST http://localhost:3000/calculate-lca \
+    --data-binary @example-request.json
+```
+
+## Endpoints
+
+- GET `/` — health_check.
+- POST `/calculate-lca` — JSON body matches `src/model.rs::LcaRequest`. Returns text/event-stream. Server sends ProgressUpdate events: Status, Compilation, EvaluationStep, Result, Error.
+- GET `/sse` — demo endpoint emitting 3 events.
+
+## OpenAPI
+
+Schema and paths are defined in `src/openapi.rs` and merged in `main.rs`:
+- Path handlers: `handler::calculate_lca_handler`, `health_check`.
+- Schemas: `LcaRequest` and all nested request types; `ProgressUpdate`, `ErrorResponse`.
+
+## SSE and tracing
+
+- `SseTracingLayer` captures tracing/log events from lca-webservice, lca_rs, lca_core and forwards selected ones to the client over SSE.
+- Use `send_sse_status(tx, kind, msg)` to emit simple status events.
+
+## Flow (high level)
 
 ```mermaid
 sequenceDiagram
     participant Client
-    participant AxumWebService
-    participant SseTracingSubscriber
-    participant LcaRsLibrary
+    participant Service
+    participant SSELayer
+    participant LCA
 
-    Client->>+AxumWebService: POST /calculate-lca (LcaModel)
-    AxumWebService->>AxumWebService: Deserialize & Validate LcaModel
-    AxumWebService->>LcaRsLibrary: model.compile()
-    LcaRsLibrary-->>AxumWebService: LcaSystem or CompilationError
-    alt Compilation Fails
-        AxumWebService-->>Client: HTTP Error (e.g., 400 Bad Request)
-    else Compilation Succeeds
-        AxumWebService->>Client: HTTP 200 OK (SSE stream headers)
-        AxumWebService->>Client: SSE Event: "Compilation successful"
-        AxumWebService->>SseTracingSubscriber: (Attach SSE sender to subscriber context)
-        Note over AxumWebService, LcaRsLibrary: Spawn task for LcaSystem.evaluate()
-        AxumWebService->>LcaRsLibrary: LcaSystem.evaluate()
-        loop During Evaluation
-            LcaRsLibrary->>LcaRsLibrary: log::info!("Step X...")
-            Note over SseTracingSubscriber, LcaRsLibrary: log event captured by tracing
-            SseTracingSubscriber->>SseTracingSubscriber: Filter relevant log
-            SseTracingSubscriber->>AxumWebService: Send formatted log via mpsc channel
-            AxumWebService->>Client: SSE Event: "Progress: Step X..."
+    Client->>Service: POST /calculate-lca (LcaRequest)
+    Service->>Service: validate, convert to LcaModel
+    Service->>SSELayer: init channel and layer
+    Service->>LCA: compile()
+    alt fail
+        Service->>Client: SSE Error and close
+    else ok
+        Service->>Client: SSE Status/Compilation
+        Service->>LCA: evaluate(GpuDevice)
+        loop progress
+            LCA->>SSELayer: tracing/log events
+            Service->>Client: SSE Info/EvaluationStep
         end
-        LcaRsLibrary-->>AxumWebService: Evaluation Result or Error
-        alt Evaluation Fails
-             AxumWebService->>Client: SSE Event: "Error: {eval_error}"
-        else Evaluation Succeeds
-             AxumWebService->>Client: SSE Event: "Result: {lca_result}"
-        end
-        AxumWebService->>Client: SSE Stream Close
+        Service->>Client: SSE Result
     end
-    deactivate AxumWebService
 ```
+
+## Notes
+
+- GPU device is created per request inside the worker task.
+- Adjust tracing via `RUST_LOG`, e.g. `RUST_LOG=info,lca_webservice=debug,lca_rs=debug`.
