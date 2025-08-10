@@ -1,14 +1,14 @@
 use crate::context::GpuContext;
 use crate::error::LcaCoreError;
-use crate::ops; // Import internal ops module
-use crate::sparse_matrix::{SparseMatrix, SparseMatrixGpu};
-use crate::vector::GpuVector;
+use crate::math::ops; // Import internal ops module
+use crate::math::sparse_matrix::{SparseMatrix, SparseMatrixGpu};
+use crate::math::vector::GpuVector;
 use cfg_if::cfg_if;
 #[cfg(feature = "wasm-bindings")]
 use wasm_bindgen::prelude::*;
 use std::{borrow::Cow, mem, sync::Arc};
 
-use super::Device;
+use crate::devices::Device;
 
 /// Represents a GPU execution device, holding the WGPU context.
 #[derive(Debug, Clone)]
@@ -209,7 +209,7 @@ impl GpuDevice {
             return Ok(()); // Nothing to do for an empty matrix
         }
 
-        let shader_source = Cow::Borrowed(include_str!("../shaders/extract_diagonal.wgsl"));
+    let shader_source = Cow::Borrowed(include_str!("../shaders/extract_diagonal.wgsl"));
         // Access create_shader_module via self.context.device and pass descriptor by value
         let shader_module =
             self.context
@@ -371,7 +371,7 @@ impl GpuDevice {
             return Ok(()); // Nothing to do for empty vectors
         }
 
-        let shader_source = Cow::Borrowed(include_str!("../shaders/invert_elements.wgsl"));
+    let shader_source = Cow::Borrowed(include_str!("../shaders/invert_elements.wgsl"));
         // Pass descriptor by value (remove &)
         let shader_module =
             self.context
@@ -501,7 +501,7 @@ impl GpuDevice {
             return Ok(()); // Nothing to do for empty vectors
         }
 
-        let shader_source = Cow::Borrowed(include_str!("../shaders/elementwise_mul.wgsl"));
+    let shader_source = Cow::Borrowed(include_str!("../shaders/elementwise_mul.wgsl"));
         let shader_module =
             self.context
                 .device

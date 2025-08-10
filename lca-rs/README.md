@@ -1,8 +1,8 @@
 # lca-rs
 
-Glue crate exposing LCA model types and evaluation helpers, with optional WASM bindings.
+Glue crate exposing LCA model helpers atop `lca-core` (which now contains the domain models).
 
-- Public modules: `model`, `error`; re-exports `EvalLCASystem` runner.
+- LCA domain types live in `lca-core::models` and are re-exported from `lca-core` root for convenience (`LcaMatrix`, `LcaSystem`, `DemandItem`, `InterSystemLink`).
 - WASM: initializes logging/panic hook via `#[wasm_bindgen(start)]` when built with `--features wasm`.
 
 Build:
