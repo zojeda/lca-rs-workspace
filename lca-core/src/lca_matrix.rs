@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
 
-#[cfg(feature = "wasm")]
+#[cfg(feature = "wasm-bindings")]
 use wasm_bindgen::prelude::*;
 
 use crate::{error::Result, sparse_matrix::Triplete, SparseMatrix};
 
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
+#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 #[derive(Debug, Clone)]
 pub struct LcaMatrix {
     pub matrix: SparseMatrix,
@@ -14,7 +14,7 @@ pub struct LcaMatrix {
     pub row_ids: Vec<String>,
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 impl LcaMatrix {
     pub fn new(matrix: SparseMatrix, col_ids: Vec<String>, row_ids: Vec<String>) -> Result<Self> {
         if matrix.cols() != col_ids.len() {

@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[cfg(feature = "wasm")]
+#[cfg(feature = "wasm-bindings")]
 use wasm_bindgen::prelude::*;
 
 pub type Result<T> = core::result::Result<T, LcaCoreError>;
@@ -67,7 +67,7 @@ pub enum LcaCoreError {
 
 // Optional: Implement conversion from wgpu specific errors if needed later
 // impl From<wgpu::RequestDeviceError> for LsolverError { ... }
-#[cfg(feature = "wasm")]
+#[cfg(feature = "wasm-bindings")]
 impl From<LcaCoreError> for wasm_bindgen::JsValue {
     fn from(err: LcaCoreError) -> Self {
         Self::from_str(&err.to_string())

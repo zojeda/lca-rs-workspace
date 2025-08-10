@@ -2,10 +2,10 @@ use crate::context::GpuContext; // Use context from this crate
 use crate::error::LcaCoreError; // Use error from this crate
 use crate::traits::Matrix; // Use Matrix trait from this crate (will be created)
 use std::sync::Arc; // Need bytemuck for casting in SparseMatrixGpu
-#[cfg(feature = "wasm")]
+#[cfg(feature = "wasm-bindings")]
 use wasm_bindgen::prelude::*;
 /// Represents a sparse matrix in Compressed Sparse Row (CSR) format on the CPU.
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
+#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct SparseMatrix {
     /// Number of rows.
@@ -22,10 +22,10 @@ pub struct SparseMatrix {
     pub(crate) row_ptr: Vec<usize>,
 }
 
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
+#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 impl SparseMatrix {
     /// Creates a new empty SparseMatrix with given dimensions.
-    #[cfg_attr(feature = "wasm", wasm_bindgen(constructor))]
+    #[cfg_attr(feature = "wasm-bindings", wasm_bindgen(constructor))]
     pub fn new(rows: usize, cols: usize) -> Self {
         SparseMatrix {
             rows,
@@ -132,7 +132,6 @@ impl SparseMatrix {
     }
 
     /// Returns the dimensions of the matrix (rows, cols).
-    #[cfg(not(feature = "wasm"))]
     pub fn dims(&self) -> (usize, usize) {
         (self.rows, self.cols)
     }
@@ -180,25 +179,21 @@ impl SparseMatrix {
         None
     }
 
-    #[cfg(not(feature = "wasm"))]
     /// Returns a slice containing the non-zero values.
     pub fn values(&self) -> &[f64] {
         &self.values
     }
 
-    #[cfg(not(feature = "wasm"))]
     /// Returns a mutable slice containing the non-zero values.
     pub fn values_mut(&mut self) -> &mut [f64] {
         &mut self.values
     }
 
-    #[cfg(not(feature = "wasm"))]
     /// Returns a slice containing the column indices.
     pub fn col_indices(&self) -> &[usize] {
         &self.col_indices
     }
 
-    #[cfg(not(feature = "wasm"))]
     /// Returns a slice containing the row pointers.
     pub fn row_ptr(&self) -> &[usize] {
         &self.row_ptr
@@ -206,7 +201,6 @@ impl SparseMatrix {
 
     /// Creates a SparseMatrix from a dense 2D vector representation.
     /// Requires `T` to implement `PartialEq` and `Default`.
-    #[cfg(not(feature = "wasm"))]
     pub fn from_dense(dense: &[Vec<f64>]) -> Self {
         let rows = dense.len();
         if rows == 0 {
@@ -245,7 +239,7 @@ impl SparseMatrix {
     }
 }
 
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
+#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Triplete {
     row: usize,
@@ -450,7 +444,7 @@ mod tests {
 }
 
 /// Represents a sparse matrix in CSR format stored on the GPU.
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
+#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 #[derive(Debug)] // Removed Clone as buffers are not easily cloneable
 pub struct SparseMatrixGpu {
     /// Number of rows.

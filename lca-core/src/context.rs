@@ -5,7 +5,9 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
-use wgpu::{util::DeviceExt, PollType}; // For create_buffer_init
+use wgpu::util::DeviceExt; // For create_buffer_init
+#[cfg(not(target_arch = "wasm32"))]
+use wgpu::PollType;
 
 /// Wrapper for WGPU instance, adapter, device, and queue, including transfer counters.
 /// This is internal to the lca-lsolver crate.
@@ -22,6 +24,7 @@ pub(crate) struct GpuContext {
 
 impl GpuContext {
     /// Initializes the WGPU context asynchronously (Native Version).
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) async fn new() -> Result<Self, LcaCoreError> {
         log::info!("Initializing native WGPU context");
 
@@ -83,7 +86,7 @@ impl GpuContext {
     }
 
     /// Initializes the WGPU context asynchronously (WASM Version).
-    #[cfg(feature = "wasm")]
+    #[cfg(target_arch = "wasm32")]
     pub(crate) async fn new_wasm() -> Result<Self, LcaCoreError> {
         log::info!("Initializing WASM WGPU context");
 

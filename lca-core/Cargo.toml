@@ -34,3 +34,12 @@ wasm-logger = { version = "0.2", optional = true } # Optional logger for WASM
 default = ["native"] # Default to native build features
 native = ["pollster"] # Features needed for native execution
 wasm = ["wasm-bindgen", "console_error_panic_hook", "wasm-logger"] # Features needed for WASM build/execution
+# Gate wasm-bindgen exports behind a separate feature so wasm tests can run without JS ABI constraints
+wasm-bindings = ["wasm-bindgen"]
+
+[dev-dependencies]
+pollster = "0.3"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
+wasm-bindgen-futures = "0.4"

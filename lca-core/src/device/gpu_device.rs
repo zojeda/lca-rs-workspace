@@ -4,33 +4,25 @@ use crate::ops; // Import internal ops module
 use crate::sparse_matrix::{SparseMatrix, SparseMatrixGpu};
 use crate::vector::GpuVector;
 use cfg_if::cfg_if;
-#[cfg(feature = "wasm")]
+#[cfg(feature = "wasm-bindings")]
 use wasm_bindgen::prelude::*;
-// Added error log
-use std::{borrow::Cow, mem, sync::Arc}; // Added Cow, mem import
+use std::{borrow::Cow, mem, sync::Arc};
 
-/// Marker trait for execution devices (CPU, GPU).
-/// Needs Send + Sync to be safely passed between async tasks/threads.
-pub trait Device: std::fmt::Debug {}
-
-/// Represents a CPU execution device.
-#[derive(Debug, Clone, Default)]
-pub struct CpuDevice {}
-impl Device for CpuDevice {}
+use super::Device;
 
 /// Represents a GPU execution device, holding the WGPU context.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
+#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 pub struct GpuDevice {
     // Context is now internal and managed by GpuDevice.
     pub(crate) context: Arc<GpuContext>,
 }
 
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
+#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 impl GpuDevice {
     /// Creates a new GpuDevice, initializing the underlying WGPU context asynchronously.
     /// This is the primary entry point for using the GPU capabilities.
-    #[cfg_attr(feature = "wasm", wasm_bindgen(constructor))]
+    #[cfg_attr(feature = "wasm-bindings", wasm_bindgen(constructor))]
     pub async fn new() -> Result<Self, LcaCoreError> {
         cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
@@ -217,7 +209,7 @@ impl GpuDevice {
             return Ok(()); // Nothing to do for an empty matrix
         }
 
-        let shader_source = Cow::Borrowed(include_str!("shaders/extract_diagonal.wgsl"));
+        let shader_source = Cow::Borrowed(include_str!("../shaders/extract_diagonal.wgsl"));
         // Access create_shader_module via self.context.device and pass descriptor by value
         let shader_module =
             self.context
@@ -379,7 +371,7 @@ impl GpuDevice {
             return Ok(()); // Nothing to do for empty vectors
         }
 
-        let shader_source = Cow::Borrowed(include_str!("shaders/invert_elements.wgsl"));
+        let shader_source = Cow::Borrowed(include_str!("../shaders/invert_elements.wgsl"));
         // Pass descriptor by value (remove &)
         let shader_module =
             self.context
@@ -509,7 +501,7 @@ impl GpuDevice {
             return Ok(()); // Nothing to do for empty vectors
         }
 
-        let shader_source = Cow::Borrowed(include_str!("shaders/elementwise_mul.wgsl"));
+        let shader_source = Cow::Borrowed(include_str!("../shaders/elementwise_mul.wgsl"));
         let shader_module =
             self.context
                 .device
@@ -655,7 +647,7 @@ impl GpuDevice {
 }
 impl Device for GpuDevice {}
 
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
+#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 pub struct TransferStats {
     pub bytes_to_gpu: u64,
     pub bytes_from_gpu: u64,

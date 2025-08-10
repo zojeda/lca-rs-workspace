@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: Set up Node (for wasm-pack test)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Chrome for headless tests
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Native build
+        run: cargo build --workspace --all-features --verbose
+
+      - name: Native tests
+        run: cargo test --workspace --all-features --verbose
+
+      - name: Wasm build (no-run) for lca-core
+        working-directory: lca-core
+        run: cargo test --target wasm32-unknown-unknown --no-run --features wasm
+
+      - name: Wasm tests (headless Chrome) for lca-core
+        working-directory: lca-core
+        env:
+          WASM_BINDGEN_TEST_BROWSER: chrome
+        run: wasm-pack test --chrome --headless
+
+      - name: Clippy (fail on warnings)
+        run: cargo clippy --workspace --all-features -- -D warnings
+
+      - name: Rustfmt check
+        run: cargo fmt --all -- --check

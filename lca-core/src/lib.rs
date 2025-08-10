@@ -6,8 +6,7 @@
 pub mod context;
 pub mod error;
 pub mod sparse_matrix;
-// pub mod matrix;
-pub mod device;
+pub mod device; // GPU device is now internal to device module
 pub mod ops; // Keep internal ops module private for now
 pub mod traits;
 pub mod vector;

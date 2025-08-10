@@ -1,7 +1,7 @@
 use std::{collections::{HashMap, HashSet}};
 
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "wasm")]
+#[cfg(feature = "wasm-bindings")]
 use wasm_bindgen::prelude::*;
 
 use crate::{error::Result, sparse_matrix::Triplete, LcaCoreError, LcaMatrix, SparseMatrix};
@@ -30,7 +30,7 @@ impl InterSystemLink {
     }
 }
 
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
+#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 #[derive(Debug, Clone)]
 pub struct LcaSystem {
     pub name: String,
@@ -44,7 +44,7 @@ pub struct LcaSystem {
     pub c_links: Vec<InterSystemLink>,
 }
 
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
+#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DemandItem {
     pub product: String, // Made pub
@@ -57,7 +57,7 @@ impl DemandItem {
     }
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 impl LcaSystem {
     pub fn new(
         name: String,
