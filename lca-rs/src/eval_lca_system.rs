@@ -1,4 +1,7 @@
-use lca_core::{DemandItem, GpuDevice, LcaMatrix, LcaSystem, SparseMatrix};
+use lca_core::{
+    models::lca_system::Demand,
+    DemandItem, GpuDevice, LcaMatrix, LcaSystem, SparseMatrix, SparseMatrixGpu, GpuVector,
+};
 use lca_lsolver::algorithms::{BiCGSTAB, SolveAlgorithm};
 
 use crate::error::{LcaError, Result};
@@ -12,6 +15,8 @@ pub struct EvalLCASystem {
     pub b_matrix: LcaMatrix,
     pub c_matrix: LcaMatrix,
     pub demand: Vec<DemandItem>,
+    /// Optional list of multiple demand sets for MultiLCA runs
+    pub demands: Vec<Demand>,
     pub evaluation_methods: Vec<String>,
 }
 
@@ -84,20 +89,38 @@ impl TryFrom<LcaSystem> for EvalLCASystem {
             Vec::new()
         };
 
+        // Seed `demands` list based on the single evaluation_demand, computed before moving it
+        let seeded_demands = if !evaluation_methods.is_empty() && !evaluation_demand.is_empty() {
+            vec![evaluation_demand.clone()]
+        } else {
+            Vec::new()
+        };
+
         Ok(Self {
             name: lca_system.name,
             a_matrix,
             b_matrix,
             c_matrix,
             demand: evaluation_demand,
+            demands: seeded_demands,
             evaluation_methods,
         })
     }
 }
 
 impl EvalLCASystem {
-    pub fn with_demand(self, demand: Vec<DemandItem>) -> Self {
-        Self { demand, ..self }
+    pub fn with_demand(self, demand: Demand) -> Self {
+        // Keep backward compatibility for single-demand API
+        let mut demands = self.demands;
+        demands.clear();
+        demands.push(demand.clone());
+        Self { demand, demands, ..self }
+    }
+    /// Set multiple demands for MultiLCA evaluation (replaces any previous list)
+    pub fn with_demands(self, demands: Vec<Demand>) -> Self {
+        // Also set the first demand (if any) as the single-demand field for backwards compatibility
+        let demand = demands.get(0).cloned().unwrap_or_default();
+        Self { demands, demand, ..self }
     }
     pub fn with_evaluation_methods(self, evaluation_methods: Vec<String>) -> Self {
         Self {
@@ -139,6 +162,70 @@ impl EvalLCASystem {
             8e-8,
         )
         .await
+    }
+
+    /// Evaluate the system for multiple demand sets, returning one impact vector per demand
+    pub async fn evaluate_multi(&self, device: &GpuDevice) -> Result<Vec<Vec<f64>>> {
+        log::info!("Evaluating MultiLCA for {} demands...", if !self.demands.is_empty() { self.demands.len() } else { 1 });
+        log::debug!("A matrix: {:?}", self.a_matrix.matrix.dims());
+        log::debug!("B matrix: {:?}", self.b_matrix.matrix.dims());
+        log::debug!("C matrix: {:?}", self.c_matrix.matrix.dims());
+
+        if self.evaluation_methods.is_empty() {
+            return Err(LcaError::DimensionError(format!(
+                "LCA system '{}' has no evaluation methods to process",
+                self.name
+            )));
+        }
+
+        // Determine which demand sets to use: prefer `self.demands`, else fall back to single `self.demand`
+        let demand_sets: Vec<Demand> = if !self.demands.is_empty() {
+            self.demands.clone()
+        } else if !self.demand.is_empty() {
+            vec![self.demand.clone()]
+        } else {
+            return Err(LcaError::DimensionError(format!(
+                "LCA system '{}' has no demand items to process",
+                self.name
+            )));
+        };
+
+        // Filter C matrix once for all evaluations
+        let c_matrix = self.filtered_c_matrix()?;
+
+        // Upload matrices once
+        let a_gpu = device.create_sparse_matrix(&self.a_matrix.matrix)?;
+        let b_gpu = device.create_sparse_matrix(&self.b_matrix.matrix)?;
+        let c_gpu = device.create_sparse_matrix(&c_matrix.matrix)?;
+
+        // Reusable GPU vectors
+        let mut x_gpu = device.create_empty_vector("x_gpu_solution_multi", a_gpu.cols())?;
+        let mut g_gpu = device.create_empty_vector("g_gpu", b_gpu.rows())?;
+        let mut h_gpu = device.create_empty_vector("h_gpu", c_gpu.rows())?;
+
+        // Reuse a single solver instance
+        let solver_bicgstab = BiCGSTAB::with_params(8e-8, 1000, true);
+
+        let mut results: Vec<Vec<f64>> = Vec::with_capacity(demand_sets.len());
+        for (i, demand) in demand_sets.iter().enumerate() {
+            log::info!("Evaluating demand set {} ({} items)...", i + 1, demand.len());
+            let f_vec = self.get_demand_vector(demand)?;
+            let res = calculate_lca_preloaded(
+                device,
+                &a_gpu,
+                &b_gpu,
+                &c_gpu,
+                &f_vec,
+                &solver_bicgstab,
+                &mut x_gpu,
+                &mut g_gpu,
+                &mut h_gpu,
+            )
+            .await?;
+            results.push(res);
+        }
+
+        Ok(results)
     }
 
     // FIXME ugly, this should be a view of the sparse matrix, without copying data
@@ -226,20 +313,12 @@ async fn calculate_lca(
     }
     log::debug!("Dimension checks passed.");
 
-    // --- 5. Transfer Data to GPU ---
-    log::debug!("Transferring data to GPU...");
-    // Use device.create_sparse_matrix and device.create_vector
+    // --- 5. Transfer Matrices to GPU ---
+    log::debug!("Transferring matrices to GPU...");
     let a_gpu = device.create_sparse_matrix(&a_cpu)?;
     let b_gpu = device.create_sparse_matrix(&b_cpu)?;
     let c_gpu = device.create_sparse_matrix(&c_cpu)?;
-    let f_gpu = device.create_vector("f_gpu", &f)?;
-    log::debug!("Data transferred to GPU.");
-    // TODO: Update the SolveAlgorithm trait in lca-lsolver to accept GpuVector directly for b.
-    // For now, read f_gpu back to CPU to match the trait signature (inefficient).
-    log::warn!(
-        "Reading f vector back from GPU to CPU due to current SolveAlgorithm trait signature. This is inefficient."
-    );
-    let f_cpu_temp = f_gpu.read_contents().await?;
+    log::debug!("Matrices transferred to GPU.");
 
     // --- 6. Solve Ax = f for x ---
 
@@ -250,7 +329,7 @@ async fn calculate_lca(
     let solution_x: Vec<f64>;
 
     log::info!("Attempting to solve Ax=f with BiCGSTAB..."); // Use log::info
-    match solver_bicgstab.solve(&device, &a_gpu, &f_cpu_temp).await {
+    match solver_bicgstab.solve(&device, &a_gpu, &f).await {
         Ok(result) => {
             log::info!("BiCGSTAB succeeded. Metadata: {:?}", result.metadata); // Use log::info
             solution_x = result.x;
@@ -305,6 +384,36 @@ async fn calculate_lca(
     Ok(h_vec)
 }
 
+// Optimized path: preloaded GPU matrices and reusable GPU vectors
+async fn calculate_lca_preloaded(
+    device: &GpuDevice,
+    a_gpu: &SparseMatrixGpu,
+    b_gpu: &SparseMatrixGpu,
+    c_gpu: &SparseMatrixGpu,
+    f: &[f64],
+    solver_bicgstab: &BiCGSTAB,
+    x_gpu: &mut GpuVector,
+    g_gpu: &mut GpuVector,
+    h_gpu: &mut GpuVector,
+) -> Result<Vec<f64>> {
+    // Solve Ax=f on GPU-backed solver, returns CPU solution
+    let solution_x = match solver_bicgstab.solve(device, a_gpu, f).await {
+        Ok(result) => result.x,
+        Err(e) => return Err(LcaError::LcaCoreError(e)),
+    };
+
+    // Upload x to GPU without reallocating buffers
+    x_gpu.write_contents(&solution_x).await.map_err(LcaError::from)?;
+
+    // g = Bx
+    b_gpu.spmv(x_gpu, g_gpu).await.map_err(LcaError::from)?;
+    // h = Cg
+    c_gpu.spmv(g_gpu, h_gpu).await.map_err(LcaError::from)?;
+    // Read back h
+    let h_vec = h_gpu.read_contents().await?;
+    Ok(h_vec)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,5 +459,71 @@ mod tests {
                 result[0]
             );
         })
+    }
+
+    #[test]
+    fn test_evaluate_multi_on_small_system() {
+        // Build a tiny system identical to test_calculate_lca_system but via EvalLCASystem
+        // Matrices
+        let a = SparseMatrix::from_triplets(
+            3,
+            3,
+            vec![
+                Triplete::new(0, 0, 1.0),
+                Triplete::new(1, 1, 1.0),
+                Triplete::new(2, 2, 1.0),
+                Triplete::new(1, 0, -2.5),
+                Triplete::new(2, 1, -237.0),
+            ],
+        )
+        .unwrap();
+        let b = SparseMatrix::from_triplets(1, 3, vec![Triplete::new(0, 1, 26.6)]).unwrap();
+        let c = SparseMatrix::from_triplets(1, 1, vec![Triplete::new(0, 0, 1.0)]).unwrap();
+
+        // Wrap into LcaMatrix with IDs
+        let proc_ids = vec![
+            "Bike production DK|Bike".to_string(),
+            "Carbon fibre DE|Carbon fibre DE".to_string(),
+            "Natural gas NO|Natural gas NO".to_string(),
+        ];
+        let sub_ids = vec!["CO2".to_string()];
+        let impact_ids = vec!["GWP100".to_string()];
+
+        let a_lca = LcaMatrix::new(a, proc_ids.clone(), proc_ids.clone()).unwrap();
+        let b_lca = LcaMatrix::new(b, proc_ids.clone(), sub_ids.clone()).unwrap();
+        let c_lca = LcaMatrix::new(c, sub_ids.clone(), impact_ids.clone()).unwrap();
+
+        let system = LcaSystem::new(
+            "SmallSys".to_string(),
+            a_lca,
+            b_lca,
+            c_lca,
+            None,                                 // we'll provide demands via EvalLCASystem API
+            Some(vec!["GWP100".to_string()]),    // evaluation methods
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+
+        pollster::block_on(async {
+            let device = GpuDevice::new().await.unwrap();
+            let eval_sys: EvalLCASystem = system.try_into().unwrap();
+
+            // Two demand sets: Proc0=1, and Proc1=1
+            let demands = vec![
+                vec![DemandItem::new("Bike production DK|Bike".to_string(), 1.0)],
+                vec![DemandItem::new("Carbon fibre DE|Carbon fibre DE".to_string(), 1.0)],
+            ];
+
+            let results = eval_sys.with_demands(demands).evaluate_multi(&device).await.unwrap();
+            assert_eq!(results.len(), 2);
+            assert_eq!(results[0].len(), 1);
+            assert_eq!(results[1].len(), 1);
+            let expected0 = 66.5_f64; // same as single-demand test for Bike
+            let expected1 = 26.6_f64; // demand on Carbon Fibre only
+            assert!((results[0][0] - expected0).abs() < 1e-3);
+            assert!((results[1][0] - expected1).abs() < 1e-3);
+        });
     }
 }

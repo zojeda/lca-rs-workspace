@@ -53,6 +53,8 @@ impl DemandItem {
     }
 }
 
+pub type Demand = Vec<DemandItem>;
+
 impl LcaSystem {
     pub fn new(
         name: String,
