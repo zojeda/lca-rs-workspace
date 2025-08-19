@@ -3,13 +3,11 @@ use crate::error::LcaCoreError;
 use crate::traits::Vector;
 use std::fmt::Debug;
 use std::{mem, sync::Arc};
-#[cfg(feature = "wasm-bindings")]
-use wasm_bindgen::prelude::*;
+ 
 #[cfg(not(target_arch = "wasm32"))]
 use wgpu::PollType;
 
 /// A generic wrapper around a `wgpu::Buffer` to manage typed vector data on the GPU.
-#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 #[derive(Debug)]
 pub struct GpuVector {
     // Renamed from Buffer, kept Zeroable bound

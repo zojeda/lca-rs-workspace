@@ -33,7 +33,7 @@ cargo build -p lca-core
 ### Build npm package (wasm)
 
 ```bash
-wasm-pack build -- --features wasm
+wasm-pack build -- --features wasm-bindings
 ```
 
 Example (browser): see `../lca_rs_wasm_example/` for loading and calling into the WASM.

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LCA Solver WASM Example</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; padding: 20px; }
+        pre { background-color: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }
+        button { padding: 10px 15px; font-size: 1em; cursor: pointer; }
+        #status { margin-top: 15px; font-weight: bold; }
+        #result { margin-top: 10px; }
+        #error { margin-top: 10px; color: red; }
+    </style>
+</head>
+<body>
+    <h1>LCA Solver WASM Example</h1>
+    <p>
+        This example demonstrates calculating LCA impacts using the Rust WASM library.
+        It uses the same sample data as the native example:
+    </p>
+    <pre>
+A = [[2, -1], [-1, 2]] (Sparse CSR)
+B = [[1, 1]]         (Sparse CSR)
+C = [[1], [1]]         (Sparse CSR)
+f = [1, 1]           (Dense)
+Expected h = [2, 2]
+    </pre>
+    <button id="runButton">Run LCA Calculation</button>
+    <div id="status">Status: Idle</div>
+    <div id="result">Result (h):</div>
+    <div id="error"></div>
+
+    <!-- Entry point for the bundled JS -->
+    <script src="./bootstrap.js"></script>
+</body>
+</html>

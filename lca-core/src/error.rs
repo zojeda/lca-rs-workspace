@@ -1,8 +1,5 @@
 use thiserror::Error;
 
-#[cfg(feature = "wasm-bindings")]
-use wasm_bindgen::prelude::*;
-
 pub type Result<T> = core::result::Result<T, LcaCoreError>;
 
 #[derive(Error, Debug)]

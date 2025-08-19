@@ -2,11 +2,8 @@ use crate::context::GpuContext;
 use crate::error::LcaCoreError;
 use crate::math::traits::Matrix;
 use std::sync::Arc;
-#[cfg(feature = "wasm-bindings")]
-use wasm_bindgen::prelude::*;
 
 /// Represents a sparse matrix in Compressed Sparse Row (CSR) format on the CPU.
-#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct SparseMatrix {
     rows: usize,
@@ -16,9 +13,7 @@ pub struct SparseMatrix {
     pub(crate) row_ptr: Vec<usize>,
 }
 
-#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 impl SparseMatrix {
-    #[cfg_attr(feature = "wasm-bindings", wasm_bindgen(constructor))]
     pub fn new(rows: usize, cols: usize) -> Self {
         SparseMatrix { rows, cols, values: Vec::new(), col_indices: Vec::new(), row_ptr: vec![0; rows + 1] }
     }
@@ -94,7 +89,6 @@ impl SparseMatrix {
     }
 }
 
-#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Triplete {
     row: usize,
@@ -135,7 +129,6 @@ impl Matrix for SparseMatrix {
 }
 
 /// Represents a sparse matrix in CSR format stored on the GPU.
-#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 #[derive(Debug)]
 pub struct SparseMatrixGpu {
     rows: usize,

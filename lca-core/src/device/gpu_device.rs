@@ -4,25 +4,20 @@ use crate::math::ops; // Import internal ops module
 use crate::math::sparse_matrix::{SparseMatrix, SparseMatrixGpu};
 use crate::math::vector::GpuVector;
 use cfg_if::cfg_if;
-#[cfg(feature = "wasm-bindings")]
-use wasm_bindgen::prelude::*;
 use std::{borrow::Cow, mem, sync::Arc};
 
 use crate::devices::Device;
 
 /// Represents a GPU execution device, holding the WGPU context.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 pub struct GpuDevice {
     // Context is now internal and managed by GpuDevice.
     pub(crate) context: Arc<GpuContext>,
 }
 
-#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 impl GpuDevice {
     /// Creates a new GpuDevice, initializing the underlying WGPU context asynchronously.
     /// This is the primary entry point for using the GPU capabilities.
-    #[cfg_attr(feature = "wasm-bindings", wasm_bindgen(constructor))]
     pub async fn new() -> Result<Self, LcaCoreError> {
         cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
@@ -647,7 +642,6 @@ impl GpuDevice {
 }
 impl Device for GpuDevice {}
 
-#[cfg_attr(feature = "wasm-bindings", wasm_bindgen)]
 pub struct TransferStats {
     pub bytes_to_gpu: u64,
     pub bytes_from_gpu: u64,
