@@ -25,6 +25,11 @@ env_logger = "0.11.8"
 pollster = "0.3" # Simple executor for running async examples/tests
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] } # Needed for #[tokio::main] in examples
 # No specific dev-dependencies needed beyond regular ones for now
+criterion = { version = "0.7", features = ["async_tokio"] }
+
+[[bench]]
+name = "pentadiagonal"
+harness = false
 
 # WASM-specific dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
