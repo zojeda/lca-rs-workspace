@@ -4,7 +4,7 @@ use utoipa::OpenApi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        crate::health_check, // Changed from crate::main::health_check
+        crate::health::health_check,
         handler::calculate_lca_handler,
     ),
     components(

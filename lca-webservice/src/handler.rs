@@ -164,7 +164,15 @@ pub async fn calculate_lca_handler(
         // Note: lca_system.evaluate takes demand and methods as Option<Vec<...>>
         // For now, we'll pass None, meaning it uses default demands from the model if any.
         // This could be parameterized in LcaRequest later.
-        let eval_system: EvalLCASystem = lca_system.try_into().unwrap();
+        let mut eval_system: EvalLCASystem = lca_system.try_into().unwrap();
+        // Configuration-based solver selection (no API parameter changes)
+        // If LCA_SOLVER=pardiso, prefer CPU direct solver; optional threads via LCA_SOLVER_THREADS
+        #[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+            if std::env::var("LCA_SOLVER").ok().as_deref() == Some("pardiso") {
+                let threads = std::env::var("LCA_SOLVER_THREADS").ok().and_then(|s| s.parse::<usize>().ok());
+                // Use default matrix type (General) by passing None; avoids direct type coupling here.
+                eval_system = eval_system.with_cpu_pardiso(None, threads);
+            }
         match eval_system.evaluate(device.as_ref()).await {
             Ok(results) => {
                 tracing::info!(target: "lca_webservice::handler", "LCA evaluation completed successfully. Results: {:?}", results.len());

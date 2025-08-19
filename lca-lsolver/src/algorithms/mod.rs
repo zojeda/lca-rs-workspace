@@ -66,6 +66,8 @@ pub trait SolveAlgorithm<D: Device, M: Matrix> {
 // Removed: pub mod gpu_ops;
 pub mod gpu_sparse_bicgstab; // GPU Sparse BiConjugate Gradient Stabilized
 pub mod gpu_sparse_cg_checked; // GPU Sparse Conjugate Gradient with SPD check
+#[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+pub mod pardiso_direct; // CPU direct solver via MKL PARDISO
 
 use num_traits::Float;
 

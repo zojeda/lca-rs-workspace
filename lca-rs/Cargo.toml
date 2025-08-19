@@ -40,3 +40,5 @@ lca-core = { path = "../lca-core", features = ["wasm"] }
 default = ["native"] # Default to native build features
 native = ["pollster"] # Features needed for native execution
 wasm = ["wasm-bindgen", "console_error_panic_hook", "wasm-logger"] # Features needed for WASM build/execution
+## Enable CPU direct solver via MKL PARDISO (native only)
+pardiso = ["lca-lsolver/pardiso"]

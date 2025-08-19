@@ -69,3 +69,4 @@ sequenceDiagram
 
 - GPU device is created per request inside the worker task.
 - Adjust tracing via `RUST_LOG`, e.g. `RUST_LOG=info,lca_webservice=debug,lca_rs=debug`.
+ - Solver selection via env (feature-gated): set `LCA_SOLVER=pardiso` to use CPU direct solver with Intel MKL PARDISO, and optionally `LCA_SOLVER_THREADS=<n>`. Requires building with `-p lca-webservice --features lca-rs/pardiso` and MKL present at runtime.

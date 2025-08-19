@@ -3,6 +3,10 @@ use lca_core::{
     DemandItem, GpuDevice, LcaMatrix, LcaSystem, SparseMatrix, SparseMatrixGpu, GpuVector,
 };
 use lca_lsolver::algorithms::{BiCGSTAB, SolveAlgorithm};
+#[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+use lca_lsolver::algorithms::pardiso_direct::{PardisoConfig, PardisoDirect, PardisoMatrixType};
+#[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+use lca_core::devices::CpuDevice;
 
 use crate::error::{LcaError, Result};
 
@@ -18,6 +22,9 @@ pub struct EvalLCASystem {
     /// Optional list of multiple demand sets for MultiLCA runs
     pub demands: Vec<Demand>,
     pub evaluation_methods: Vec<String>,
+    /// Solver backend selection (GPU BiCGSTAB by default)
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    solver_backend: SolverBackend,
 }
 
 impl TryFrom<LcaSystem> for EvalLCASystem {
@@ -104,6 +111,7 @@ impl TryFrom<LcaSystem> for EvalLCASystem {
             demand: evaluation_demand,
             demands: seeded_demands,
             evaluation_methods,
+            solver_backend: SolverBackend::GpuBiCGSTAB,
         })
     }
 }
@@ -127,6 +135,11 @@ impl EvalLCASystem {
             evaluation_methods,
             ..self
         }
+    }
+    /// Prefer CPU PARDISO direct solver instead of GPU BiCGSTAB (native only)
+    #[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+    pub fn with_cpu_pardiso(self, matrix_type: Option<PardisoMatrixType>, max_threads: Option<usize>) -> Self {
+        Self { solver_backend: SolverBackend::CpuPardiso { matrix_type, max_threads }, ..self }
     }
     pub async fn evaluate(&self, device: &GpuDevice) -> Result<Vec<f64>> {
         log::info!("Evaluating LCA system...");
@@ -160,6 +173,7 @@ impl EvalLCASystem {
             f_vec,
             1000, // FIXME hardcoded max_iterations
             8e-8,
+            &self.solver_backend,
         )
         .await
     }
@@ -264,6 +278,13 @@ impl EvalLCASystem {
 }
 
 // --- Main LCA Calculation Function ---
+#[derive(Debug, Clone)]
+enum SolverBackend {
+    GpuBiCGSTAB,
+    #[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+    CpuPardiso { matrix_type: Option<PardisoMatrixType>, max_threads: Option<usize> },
+}
+
 async fn calculate_lca(
     device: &GpuDevice,
     // A Matrix (CSR)
@@ -277,6 +298,7 @@ async fn calculate_lca(
     // Solver parameters
     max_iterations: usize,
     tolerance: f64, // Will be 8e-6 from evaluate, or 8e-4 from test_calculate_lca_system
+    solver_backend: &SolverBackend,
 ) -> Result<Vec<f64>> {
     log::info!("Starting LCA calculation with tolerance: {}", tolerance); // Use log::info
 
@@ -322,27 +344,33 @@ async fn calculate_lca(
 
     // --- 6. Solve Ax = f for x ---
 
-    let solver_bicgstab = BiCGSTAB::with_params(tolerance, max_iterations, true);
-
-    log::info!("Attempting to solve Ax=f with BiCGSTAB...");
-
-    let solution_x: Vec<f64>;
-
-    log::info!("Attempting to solve Ax=f with BiCGSTAB..."); // Use log::info
-    match solver_bicgstab.solve(&device, &a_gpu, &f).await {
-        Ok(result) => {
-            log::info!("BiCGSTAB succeeded. Metadata: {:?}", result.metadata); // Use log::info
-            solution_x = result.x;
+    let solution_x: Vec<f64> = match solver_backend {
+        SolverBackend::GpuBiCGSTAB => {
+            let solver_bicgstab = BiCGSTAB::with_params(tolerance, max_iterations, true);
+            log::info!("Attempting to solve Ax=f with BiCGSTAB...");
+            match solver_bicgstab.solve(&device, &a_gpu, &f).await {
+                Ok(result) => {
+                    log::info!("BiCGSTAB succeeded. Metadata: {:?}", result.metadata);
+                    result.x
+                }
+                Err(e) => {
+                    log::error!("BiCGSTAB failed: {:?}", e);
+                    return Err(LcaError::LcaCoreError(e));
+                }
+            }
         }
-        Err(other_bicgstab_core_err) => {
-            // Other LcaCoreError from BiCGSTAB
-            log::error!(
-                "BiCGSTAB failed with unexpected core error: {:?}",
-                other_bicgstab_core_err
-            ); // Use log::error
-            return Err(LcaError::LcaCoreError(other_bicgstab_core_err));
+        #[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+        SolverBackend::CpuPardiso { matrix_type, max_threads } => {
+            log::info!("Attempting to solve Ax=f with CPU PARDISO...");
+            let cfg = PardisoConfig { matrix_type: matrix_type.unwrap_or(PardisoMatrixType::General), max_threads: *max_threads };
+            let solver = PardisoDirect::new(cfg);
+            let cpu = CpuDevice::default();
+            match solver.solve(&cpu, a_cpu, &f).await {
+                Ok(result) => result.x,
+                Err(e) => return Err(LcaError::LcaCoreError(e)),
+            }
         }
-    }
+    };
 
     log::info!("System Ax=f solved."); // Use log::info
 
@@ -447,7 +475,7 @@ mod tests {
         let f = vec![1.0, 0.0, 0.0];
         pollster::block_on(async {
             let device = GpuDevice::new().await.unwrap();
-            let result = calculate_lca(&device, &a, &b, &c, f, 1000, 1e-12)
+            let result = calculate_lca(&device, &a, &b, &c, f, 1000, 1e-12, &SolverBackend::GpuBiCGSTAB)
                 .await
                 .expect("LCA calculation failed");
             assert_eq!(result.len(), 1);

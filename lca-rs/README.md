@@ -13,3 +13,9 @@ cargo build -p lca-rs
 
 WASM (via workspace features from dependents like web or example):
 - See `../lca_rs_wasm_example/` for browser usage.
+
+## Features
+
+- native (default): Native build with GPU support via wgpu
+- wasm: WebAssembly build (no native GPU)
+- pardiso: Enable CPU direct solver via Intel MKL PARDISO (requires MKL at runtime). When enabled, you can switch EvalLCASystem to use PARDISO via `.with_cpu_pardiso(...)` before calling `evaluate`.

@@ -1,12 +1,7 @@
-use axum::{routing::get, Router};
-use handler::{sse_handler, test_json_array_stream};
-use model::LcaRequest;
+use axum::Router;
 use std::net::SocketAddr;
-use tower_http::cors::{Any, CorsLayer};
-use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, fmt};
-use utoipa::{OpenApi, PartialSchema}; // Re-added: Needed for ApiDoc::openapi() trait method
-use utoipa_swagger_ui::SwaggerUi;
+use utoipa::{OpenApi, PartialSchema};
 
 // Module declarations for our application structure
 mod error;
@@ -14,10 +9,12 @@ mod handler;
 mod model;
 mod openapi;
 mod sse;
+mod app;
 
 // Re-export for convenience if needed elsewhere, or keep private
 use crate::openapi::ApiDoc;
 
+mod health;
 #[tokio::main]
 async fn main() {
     // Initialize tracing to capture logs from `log` crate and `tracing` calls
@@ -37,25 +34,8 @@ async fn main() {
 
     tracing::info!("Tracing initialized. Starting LCA webservice...");
 
-    // Define CORS layer
-    let cors = CorsLayer::new()
-        .allow_origin(Any) // Allow any origin
-        .allow_methods(Any) // Allow all methods
-        .allow_headers(Any); // Allow all headers
-
-    let schema = LcaRequest::schema(); // Get the schema for LcaRequest
-    println!("Schema for LcaRequest: {}", serde_json::to_string(&schema).unwrap());
-
     // Build our application router
-    let app = Router::new()
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi())) // Restored .url()
-        .route("/", get(health_check))
-        .route("/calculate-lca", axum::routing::post(handler::calculate_lca_handler))
-        .route("/sse", get(sse_handler))
-        .route("/other", get(test_json_array_stream))
-        // Add more routes here as needed
-        .layer(TraceLayer::new_for_http()) // Layer for HTTP tracing
-        .layer(cors); // Apply CORS middleware
+    let app = app::build_router();
 
     // Run the server
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
@@ -73,18 +53,3 @@ async fn main() {
         tracing::error!("Server error: {}", e);
     }
 }
-
-#[utoipa::path(
-    get,
-    path = "/",
-    responses(
-        (status = 200, description = "Service is healthy", body = String)
-    )
-)]
-pub async fn health_check() -> &'static str {
-    tracing::info!("Health check endpoint hit");
-    "LCA Webservice is running!"
-}
-
-// The main ApiDoc is defined in openapi.rs and merged into the router.
-// No need for a duplicate or placeholder ApiDoc struct here.

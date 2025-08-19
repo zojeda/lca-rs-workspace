@@ -60,6 +60,18 @@ cargo run -p lca-lsolver --example pentadiagonal_solve
 - Default feature `native`; `wasm` feature enables wasm-bindgen bindings.
 - Uses `f64` throughout for matrix/vector data.
 
+### Optional: PARDISO direct solver (native only)
+
+- Enable feature `pardiso` to use Intel MKL PARDISO via `pardiso-wrapper`.
+- Requires MKL available at runtime (e.g., oneAPI). Ensure `libmkl_rt.so` is on `LD_LIBRARY_PATH` or set `MKLROOT`.
+- Not available for `wasm32` targets.
+
+Example build:
+
+```bash
+cargo test -p lca-lsolver --features pardiso
+```
+
 ## Notes
 
 - Construct CPU matrices with `SparseMatrix::from_triplets` or `from_csr`, then upload via `GpuDevice::create_sparse_matrix`.
