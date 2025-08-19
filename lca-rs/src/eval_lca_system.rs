@@ -25,6 +25,8 @@ pub struct EvalLCASystem {
     /// Solver backend selection (GPU BiCGSTAB by default)
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     solver_backend: SolverBackend,
+    /// Device backend for Bx and Cg multiplications. If None, defaults based on solver backend at evaluate time.
+    device_backend: Option<DeviceBackend>,
 }
 
 impl TryFrom<LcaSystem> for EvalLCASystem {
@@ -112,6 +114,7 @@ impl TryFrom<LcaSystem> for EvalLCASystem {
             demands: seeded_demands,
             evaluation_methods,
             solver_backend: SolverBackend::GpuBiCGSTAB,
+            device_backend: None,
         })
     }
 }
@@ -139,9 +142,22 @@ impl EvalLCASystem {
     /// Prefer CPU PARDISO direct solver instead of GPU BiCGSTAB (native only)
     #[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
     pub fn with_cpu_pardiso(self, matrix_type: Option<PardisoMatrixType>, max_threads: Option<usize>) -> Self {
+        // If device backend not explicitly set later, we'll default to CPU device at evaluate time.
         Self { solver_backend: SolverBackend::CpuPardiso { matrix_type, max_threads }, ..self }
     }
-    pub async fn evaluate(&self, device: &GpuDevice) -> Result<Vec<f64>> {
+    /// Provide an explicit GPU device to be used for Bx/Cg; overrides any internal device.
+    pub fn with_gpu_device(mut self, device: GpuDevice) -> Self {
+        self.device_backend = Some(DeviceBackend::Gpu(device));
+        self
+    }
+    /// Provide an explicit CPU device to be used for Bx/Cg; overrides any internal device.
+    #[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+    pub fn with_cpu_device(mut self, device: CpuDevice) -> Self {
+        self.device_backend = Some(DeviceBackend::Cpu(device));
+        self
+    }
+    /// Evaluate using an internal device backend; no need to pass a device.
+    pub async fn evaluate(&self) -> Result<Vec<f64>> {
         log::info!("Evaluating LCA system...");
         log::debug!("A matrix: {:?}", self.a_matrix.matrix.dims());
         log::debug!("B matrix: {:?}", self.b_matrix.matrix.dims());
@@ -165,21 +181,23 @@ impl EvalLCASystem {
         let f_vec = self.get_demand_vector(&self.demand)?;
         log::info!("f (demand) vector length: {}", f_vec.len());
 
-        calculate_lca(
-            device,
+        // Pick device backend: use provided one or default based on solver backend
+        let device_backend = self.ensure_device_backend().await?;
+
+        calculate_lca_with_backend(
+            &device_backend,
             &self.a_matrix.matrix,
             &self.b_matrix.matrix,
             &c_matrix.matrix,
             f_vec,
-            1000, // FIXME hardcoded max_iterations
+            1000,
             8e-8,
             &self.solver_backend,
-        )
-        .await
+        ).await
     }
 
     /// Evaluate the system for multiple demand sets, returning one impact vector per demand
-    pub async fn evaluate_multi(&self, device: &GpuDevice) -> Result<Vec<Vec<f64>>> {
+    pub async fn evaluate_multi(&self) -> Result<Vec<Vec<f64>>> {
         log::info!("Evaluating MultiLCA for {} demands...", if !self.demands.is_empty() { self.demands.len() } else { 1 });
         log::debug!("A matrix: {:?}", self.a_matrix.matrix.dims());
         log::debug!("B matrix: {:?}", self.b_matrix.matrix.dims());
@@ -207,35 +225,65 @@ impl EvalLCASystem {
         // Filter C matrix once for all evaluations
         let c_matrix = self.filtered_c_matrix()?;
 
-        // Upload matrices once
-        let a_gpu = device.create_sparse_matrix(&self.a_matrix.matrix)?;
-        let b_gpu = device.create_sparse_matrix(&self.b_matrix.matrix)?;
-        let c_gpu = device.create_sparse_matrix(&c_matrix.matrix)?;
+        // Ensure device backend for Bx/Cg
+        let device_backend = self.ensure_device_backend().await?;
+        // Prepare GPU resources only if needed
+        let mut gpu_preload: Option<GpuPreload> = None;
+        if let DeviceBackend::Gpu(ref device) = device_backend {
+            let a_gpu = device.create_sparse_matrix(&self.a_matrix.matrix)?;
+            let b_gpu = device.create_sparse_matrix(&self.b_matrix.matrix)?;
+            let c_gpu = device.create_sparse_matrix(&c_matrix.matrix)?;
+            let x_gpu = device.create_empty_vector("x_gpu_solution_multi", a_gpu.cols())?;
+            let g_gpu = device.create_empty_vector("g_gpu", b_gpu.rows())?;
+            let h_gpu = device.create_empty_vector("h_gpu", c_gpu.rows())?;
+            gpu_preload = Some(GpuPreload { device: device.clone(), a_gpu, b_gpu, c_gpu, x_gpu, g_gpu, h_gpu });
+        }
 
-        // Reusable GPU vectors
-        let mut x_gpu = device.create_empty_vector("x_gpu_solution_multi", a_gpu.cols())?;
-        let mut g_gpu = device.create_empty_vector("g_gpu", b_gpu.rows())?;
-        let mut h_gpu = device.create_empty_vector("h_gpu", c_gpu.rows())?;
-
-        // Reuse a single solver instance
+        // Reuse a single solver instance for GPU
         let solver_bicgstab = BiCGSTAB::with_params(8e-8, 1000, true);
 
         let mut results: Vec<Vec<f64>> = Vec::with_capacity(demand_sets.len());
         for (i, demand) in demand_sets.iter().enumerate() {
             log::info!("Evaluating demand set {} ({} items)...", i + 1, demand.len());
             let f_vec = self.get_demand_vector(demand)?;
-            let res = calculate_lca_preloaded(
-                device,
-                &a_gpu,
-                &b_gpu,
-                &c_gpu,
-                &f_vec,
-                &solver_bicgstab,
-                &mut x_gpu,
-                &mut g_gpu,
-                &mut h_gpu,
-            )
-            .await?;
+            let res = match (&device_backend, &mut gpu_preload) {
+                (DeviceBackend::Gpu(_), Some(preload)) => {
+                    calculate_lca_preloaded(
+                        &preload.device,
+                        &preload.a_gpu,
+                        &preload.b_gpu,
+                        &preload.c_gpu,
+                        &f_vec,
+                        &solver_bicgstab,
+                        &mut preload.x_gpu,
+                        &mut preload.g_gpu,
+                        &mut preload.h_gpu,
+                    ).await?
+                }
+                #[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+                (DeviceBackend::Cpu(cpu), _) => {
+                    // CPU solve path depending on solver backend
+                    let x = match self.solver_backend {
+                        SolverBackend::GpuBiCGSTAB => {
+                            // Fallback: perform solve on GPU once for solution only
+                            let gpu = GpuDevice::new().await.map_err(|e| LcaError::LcaCoreError(e))?;
+                            let a_gpu = gpu.create_sparse_matrix(&self.a_matrix.matrix)?;
+                            let sol = solver_bicgstab.solve(&gpu, &a_gpu, &f_vec).await.map_err(LcaError::LcaCoreError)?.x;
+                            sol
+                        }
+                        #[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+                        SolverBackend::CpuPardiso { matrix_type, max_threads } => {
+                            let cfg = PardisoConfig { matrix_type: matrix_type.unwrap_or(PardisoMatrixType::General), max_threads };
+                            let solver = PardisoDirect::new(cfg);
+                            solver.solve(cpu, &self.a_matrix.matrix, &f_vec).await.map_err(LcaError::LcaCoreError)?.x
+                        }
+                    };
+                    let g = cpu.spmv_csr(&self.b_matrix.matrix, &x).map_err(LcaError::LcaCoreError)?;
+                    let h = cpu.spmv_csr(&c_matrix.matrix, &g).map_err(LcaError::LcaCoreError)?;
+                    h
+                }
+                _ => unreachable!("Unsupported backend combination"),
+            };
             results.push(res);
         }
 
@@ -285,8 +333,15 @@ enum SolverBackend {
     CpuPardiso { matrix_type: Option<PardisoMatrixType>, max_threads: Option<usize> },
 }
 
-async fn calculate_lca(
-    device: &GpuDevice,
+#[derive(Clone)]
+enum DeviceBackend {
+    Gpu(GpuDevice),
+    #[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+    Cpu(CpuDevice),
+}
+
+async fn calculate_lca_with_backend(
+    device_backend: &DeviceBackend,
     // A Matrix (CSR)
     a_cpu: &SparseMatrix,
     // B Matrix (CSR)
@@ -335,20 +390,36 @@ async fn calculate_lca(
     }
     log::debug!("Dimension checks passed.");
 
-    // --- 5. Transfer Matrices to GPU ---
-    log::debug!("Transferring matrices to GPU...");
-    let a_gpu = device.create_sparse_matrix(&a_cpu)?;
-    let b_gpu = device.create_sparse_matrix(&b_cpu)?;
-    let c_gpu = device.create_sparse_matrix(&c_cpu)?;
-    log::debug!("Matrices transferred to GPU.");
+    // Prepare GPU matrices only if needed for Bx/Cg
+    let mut gpu_mats: Option<(GpuDevice, SparseMatrixGpu, SparseMatrixGpu, SparseMatrixGpu)> = None;
+    if let DeviceBackend::Gpu(device) = device_backend {
+        log::debug!("Transferring matrices to GPU...");
+        let a_gpu = device.create_sparse_matrix(&a_cpu)?;
+        let b_gpu = device.create_sparse_matrix(&b_cpu)?;
+        let c_gpu = device.create_sparse_matrix(&c_cpu)?;
+        log::debug!("Matrices transferred to GPU.");
+        gpu_mats = Some((device.clone(), a_gpu, b_gpu, c_gpu));
+    }
 
     // --- 6. Solve Ax = f for x ---
 
     let solution_x: Vec<f64> = match solver_backend {
         SolverBackend::GpuBiCGSTAB => {
+            let maybe_refs = match &gpu_mats {
+                Some((device, a_gpu, _, _)) => Some((device, a_gpu)),
+                None => None,
+            };
             let solver_bicgstab = BiCGSTAB::with_params(tolerance, max_iterations, true);
             log::info!("Attempting to solve Ax=f with BiCGSTAB...");
-            match solver_bicgstab.solve(&device, &a_gpu, &f).await {
+            let solve_res = match maybe_refs {
+                Some((device, a_gpu)) => solver_bicgstab.solve(device, a_gpu, &f).await,
+                None => {
+                    let device = GpuDevice::new().await.map_err(LcaError::LcaCoreError)?;
+                    let a_gpu = device.create_sparse_matrix(&a_cpu)?;
+                    solver_bicgstab.solve(&device, &a_gpu, &f).await
+                }
+            };
+            match solve_res {
                 Ok(result) => {
                     log::info!("BiCGSTAB succeeded. Metadata: {:?}", result.metadata);
                     result.x
@@ -374,42 +445,29 @@ async fn calculate_lca(
 
     log::info!("System Ax=f solved."); // Use log::info
 
-    // Create x_gpu from the solution vector returned by the solver
-    let x_gpu = device.create_vector(
-        "x_gpu_solution",
-        &solution_x, // Use the obtained solution data
-    )?;
-
-    // --- 7. Calculate g = Bx ---
-    log::debug!("Calculating g = Bx...");
-    // Use device.create_empty_vector for the output vector g
-    let mut g_gpu = device.create_empty_vector("g_gpu", b_gpu.rows())?;
-    b_gpu
-        .spmv(&x_gpu, &mut g_gpu)
-        .await
-        .map_err(LcaError::from)?; // Map error before '?' - Keep for spmv
-    log::debug!("Calculated g = Bx.");
-
-    // --- 8. Calculate h = Cg ---
-    log::debug!("Calculating h = Cg...");
-    // Us e device.create_empty_vector for the output vector h
-    let mut h_gpu = device.create_empty_vector("h_gpu", c_gpu.rows())?;
-    c_gpu
-        .spmv(&g_gpu, &mut h_gpu)
-        .await
-        .map_err(LcaError::from)?; // Map error before '?' - Keep for spmv
-    log::debug!("Calculated h = Cg.");
-
-    // --- 9. Read Result Back ---
-    log::debug!("Reading final result vector h back from GPU...");
-    // Use read_contents with internal context (no context argument needed)
-    let h_vec: Vec<f64> = h_gpu.read_contents().await?; // Map error before '?'
-    log::debug!(
-        "Result vector read back successfully ({} elements).",
-        h_vec.len()
-    );
-
-    Ok(h_vec)
+    // Compute g and h using selected device backend
+    match device_backend {
+        DeviceBackend::Gpu(device) => {
+            let (_, _a_gpu, b_gpu, c_gpu) = gpu_mats.expect("GPU mats must exist for GPU backend");
+            // upload x
+            let x_gpu = device.create_vector("x_gpu_solution", &solution_x)?;
+            // g = Bx
+            let mut g_gpu = device.create_empty_vector("g_gpu", b_gpu.rows())?;
+            b_gpu.spmv(&x_gpu, &mut g_gpu).await.map_err(LcaError::from)?;
+            // h = Cg
+            let mut h_gpu = device.create_empty_vector("h_gpu", c_gpu.rows())?;
+            c_gpu.spmv(&g_gpu, &mut h_gpu).await.map_err(LcaError::from)?;
+            // read back
+            let h_vec: Vec<f64> = h_gpu.read_contents().await?;
+            Ok(h_vec)
+        }
+        #[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+        DeviceBackend::Cpu(cpu) => {
+            let g = cpu.spmv_csr(b_cpu, &solution_x).map_err(LcaError::LcaCoreError)?;
+            let h = cpu.spmv_csr(c_cpu, &g).map_err(LcaError::LcaCoreError)?;
+            Ok(h)
+        }
+    }
 }
 
 // Optimized path: preloaded GPU matrices and reusable GPU vectors
@@ -440,6 +498,36 @@ async fn calculate_lca_preloaded(
     // Read back h
     let h_vec = h_gpu.read_contents().await?;
     Ok(h_vec)
+}
+
+// Small helper to hold preloaded GPU resources for multi evaluation
+struct GpuPreload {
+    device: GpuDevice,
+    a_gpu: SparseMatrixGpu,
+    b_gpu: SparseMatrixGpu,
+    c_gpu: SparseMatrixGpu,
+    x_gpu: GpuVector,
+    g_gpu: GpuVector,
+    h_gpu: GpuVector,
+}
+
+impl EvalLCASystem {
+    async fn ensure_device_backend(&self) -> Result<DeviceBackend> {
+        if let Some(ref backend) = self.device_backend {
+            return Ok(backend.clone());
+        }
+        match self.solver_backend {
+            SolverBackend::GpuBiCGSTAB => {
+                // Prefer GPU device
+                let gpu = GpuDevice::new().await.map_err(LcaError::LcaCoreError)?;
+                Ok(DeviceBackend::Gpu(gpu))
+            }
+            #[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+            SolverBackend::CpuPardiso { .. } => {
+                Ok(DeviceBackend::Cpu(CpuDevice::default()))
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -474,8 +562,8 @@ mod tests {
 
         let f = vec![1.0, 0.0, 0.0];
         pollster::block_on(async {
-            let device = GpuDevice::new().await.unwrap();
-            let result = calculate_lca(&device, &a, &b, &c, f, 1000, 1e-12, &SolverBackend::GpuBiCGSTAB)
+            let backend = DeviceBackend::Gpu(GpuDevice::new().await.unwrap());
+            let result = calculate_lca_with_backend(&backend, &a, &b, &c, f, 1000, 1e-12, &SolverBackend::GpuBiCGSTAB)
                 .await
                 .expect("LCA calculation failed");
             assert_eq!(result.len(), 1);
@@ -535,7 +623,6 @@ mod tests {
         .unwrap();
 
         pollster::block_on(async {
-            let device = GpuDevice::new().await.unwrap();
             let eval_sys: EvalLCASystem = system.try_into().unwrap();
 
             // Two demand sets: Proc0=1, and Proc1=1
@@ -544,7 +631,7 @@ mod tests {
                 vec![DemandItem::new("Carbon fibre DE|Carbon fibre DE".to_string(), 1.0)],
             ];
 
-            let results = eval_sys.with_demands(demands).evaluate_multi(&device).await.unwrap();
+            let results = eval_sys.with_demands(demands).evaluate_multi().await.unwrap();
             assert_eq!(results.len(), 2);
             assert_eq!(results[0].len(), 1);
             assert_eq!(results[1].len(), 1);

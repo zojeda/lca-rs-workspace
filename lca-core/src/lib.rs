@@ -38,6 +38,7 @@ pub mod vector {
 pub mod traits {
     pub use crate::math::traits::*;
 }
+#[allow(unused_imports)]
 pub mod ops {
     pub use crate::math::ops::*;
 }

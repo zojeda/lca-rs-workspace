@@ -6,6 +6,7 @@
 fn main() {
     use lca_core::sparse_matrix::{SparseMatrix, Triplete};
     use lca_lsolver::algorithms::pardiso_direct::{PardisoConfig, PardisoDirect, PardisoMatrixType};
+    use lca_lsolver::algorithms::SolveAlgorithm;
     use lca_core::devices::CpuDevice;
 
     // Simple 3x3 general system

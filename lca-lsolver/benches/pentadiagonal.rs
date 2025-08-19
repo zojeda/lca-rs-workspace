@@ -4,6 +4,10 @@ use lca_lsolver::{
     algorithms::{BiCGSTAB, ConjugateGradient, SolveAlgorithm},
     SparseMatrix,
 };
+#[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+use lca_lsolver::algorithms::pardiso_direct::{PardisoConfig, PardisoDirect, PardisoMatrixType};
+#[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+use lca_core::devices::CpuDevice;
 
 // Utilities copied/adapted from examples/pentadiagonal_solve.rs
 fn create_pentadiagonal_matrix(n: usize) -> SparseMatrix {
@@ -141,6 +145,21 @@ fn do_benches(c: &mut Criterion) {
                 });
             });
         });
+
+        // CPU PARDISO Direct solver (native only), matrix is SPD so use Spd type.
+        // Enable by setting env LCA_BENCH_PARDISO=1 to avoid CI/local crashes when MKL is not configured.
+        #[cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
+        if std::env::var("LCA_BENCH_PARDISO").ok().as_deref() == Some("1") {
+            group.bench_with_input(BenchmarkId::new("PARDISO-direct", n), &n, |bencher, &_n| {
+                bencher.iter(|| {
+                    let cfg = PardisoConfig { matrix_type: PardisoMatrixType::Spd, max_threads: None };
+                    let solver = PardisoDirect::new(cfg);
+                    let cpu = CpuDevice::default();
+                    let _ = pollster::block_on(async { solver.solve(&cpu, &a_cpu, &b).await })
+                        .expect("PARDISO solve failed");
+                });
+            });
+        }
     }
 
     group.finish();

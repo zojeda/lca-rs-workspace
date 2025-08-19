@@ -132,7 +132,7 @@ pub async fn calculate_lca_handler(
             "Initializing GPU device...".to_string(),
         )
         .await;
-        let device: Arc<GpuDevice> = match GpuDevice::new().await { // Added type annotation
+    let _device: Arc<GpuDevice> = match GpuDevice::new().await { // Added type annotation
             Ok(d) => {
                 tracing::info!(target: "lca_webservice::handler", "GPU device initialized successfully.");
                 send_sse_status(
@@ -173,7 +173,7 @@ pub async fn calculate_lca_handler(
                 // Use default matrix type (General) by passing None; avoids direct type coupling here.
                 eval_system = eval_system.with_cpu_pardiso(None, threads);
             }
-        match eval_system.evaluate(device.as_ref()).await {
+    match eval_system.evaluate().await {
             Ok(results) => {
                 tracing::info!(target: "lca_webservice::handler", "LCA evaluation completed successfully. Results: {:?}", results.len());
                 let success_payload = ProgressUpdate {

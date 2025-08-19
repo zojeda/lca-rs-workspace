@@ -15,6 +15,8 @@ bytemuck = { workspace = true}
 log = { workspace = true }  # For logging facade
 thiserror = { workspace = true} # For error handling, potentially useful
 num-traits = { workspace = true}
+sprs = "0.11"
+ndarray = "0.15"
 
 # Native-specific dependencies (optional, e.g., for native examples or testing)
 pollster = { version = "0.3", optional = true }

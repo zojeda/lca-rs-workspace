@@ -556,13 +556,9 @@ mod tests {
         assert_eq!(system.c_matrix().row_ids(), &["GWP100"]);
 
         pollster::block_on(async {
-            let device = lca_core::GpuDevice::new()
-                .await
-                .expect("Failed to create GPU device");
-
             let eval_system: EvalLCASystem = system.try_into().unwrap();
             let result = eval_system
-                .evaluate(&device)
+                .evaluate()
                 .await
                 .expect("Failed to evaluate LCA model");
 
@@ -812,14 +808,10 @@ mod tests {
         assert_eq!(system.c_matrix().matrix().get(0, 0), Some(1.0));
 
         pollster::block_on(async {
-            let device = lca_core::GpuDevice::new()
-                .await
-                .expect("Failed to create GPU device");
-
             let eval_system: EvalLCASystem = system.try_into().unwrap();
 
             let result = eval_system
-              .evaluate(&device)
+              .evaluate()
                 .await
                 .expect("LCA evaluation failed");
 

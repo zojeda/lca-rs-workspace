@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 
 
@@ -41,20 +41,27 @@ impl LcaMatrix {
     }
 
     pub fn filter_rows(&self, keep_rows: &[String]) -> Result<Self> {
-        let mut new_row_ids = HashSet::new();
-        let mut triplets = Vec::new();
-        // Iterate over the rows and keep only the specified ones, creating a triplets list for the new matrix
-        for triplete in self.matrix.iter() {
-            let row_id = &self.row_ids[triplete.row()];
-            if keep_rows.contains(row_id) {
-                new_row_ids.insert(row_id.clone());
-                let row_id = new_row_ids.iter().position(|id| id == row_id).unwrap();
-                triplets.push(Triplete::new(row_id, triplete.col(), triplete.value()));
-            };
+        // Build a stable mapping from row name to new row index preserving the keep_rows order
+        let mut index_map: HashMap<&str, usize> = HashMap::with_capacity(keep_rows.len());
+        let mut new_row_ids: Vec<String> = Vec::with_capacity(keep_rows.len());
+        for name in keep_rows.iter() {
+            // Only include rows that actually exist in this matrix and avoid duplicates
+            if self.row_ids.contains(name) && !index_map.contains_key(name.as_str()) {
+                let next_index = new_row_ids.len();
+                index_map.insert(name.as_str(), next_index);
+                new_row_ids.push(name.clone());
+            }
         }
-        let new_row_ids: Vec<String> = new_row_ids.into_iter().collect();
-        let new_matrix =
-            SparseMatrix::from_triplets(new_row_ids.len(), self.matrix.cols(), triplets)?;
+
+        let mut triplets = Vec::new();
+        for triplete in self.matrix.iter() {
+            let row_name = &self.row_ids[triplete.row()];
+            if let Some(&new_row) = index_map.get(row_name.as_str()) {
+                triplets.push(Triplete::new(new_row, triplete.col(), triplete.value()));
+            }
+        }
+
+        let new_matrix = SparseMatrix::from_triplets(new_row_ids.len(), self.matrix.cols(), triplets)?;
 
         Ok(Self {
             matrix: new_matrix,
