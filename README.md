@@ -42,9 +42,7 @@ graph LR
   glue --> core
   glue --> lsolver
   web --> glue
-  web --> core
   ei --> glue
-  ei --> core
   db --> parser
 
   %% External data used by examples
@@ -114,3 +112,33 @@ WASM (example app)
 ---
 
 For per-crate details, see each project’s README.
+
+## Workspace dependency management
+
+This repository uses Cargo's workspace inheritance to eliminate duplication:
+
+- `[workspace.package]` centralizes `version`, `edition`, `rust-version`, `license`, `repository`, and `authors`.
+- `[workspace.dependencies]` pins shared versions for commonly used libraries (GPU stack, async, error handling, serialization, tracing, benchmarks, WASM tooling).
+
+When adding a dependency that will be shared across crates:
+1. Add it (with features) under `[workspace.dependencies]` in the root `Cargo.toml`.
+2. In each crate's `Cargo.toml`, reference it with `dep_name.workspace = true` (and add crate-specific `features = ["..."]` if needed).
+3. Keep crate-local dependencies only if: different versions are intentionally required, features diverge significantly, or the dependency is used in just one crate.
+
+Current centralized dependencies (abbrev):
+`wgpu`, `futures`, `tokio`, `tracing`, `tracing-subscriber`, `tracing-log`, `serde`, `serde_json`, `derive_more`, `thiserror`, `log`, `uuid`, `chrono`, `criterion`, `reqwest`, `tokio-stream`, `bytemuck`, `cfg-if`, `num-traits`, `pollster`, `wasm-bindgen`, `wasm-bindgen-futures`, `js-sys`, `web-sys`, `console_error_panic_hook`, `wasm-logger`, `fastrand`, `env_logger`, `validator`, `axum-streams`.
+
+Rationale:
+- Single source of truth simplifies version bumps (e.g., tracing upgrade, serde security patch).
+- Uniform feature sets (e.g., `tracing-subscriber` env-filter/json/fmt) reduce inconsistent logging output.
+- WASM crates rely on shared versions to avoid duplicate JS glue.
+
+Benchmarks & performance:
+- `criterion` unified at 0.7 across solvers; adjust root version if new API changes required.
+
+Future improvements:
+- Consider `cargo-deny` or `cargo audit` CI steps.
+- Evaluate moving rarely used heavy deps (e.g., `reqwest`) behind features if not needed by all consumers.
+
+To change a shared version: update root, run `cargo check --workspace`, then run tests / benchmarks.
+

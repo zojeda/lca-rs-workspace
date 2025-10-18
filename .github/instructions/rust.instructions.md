@@ -76,6 +76,10 @@ These instructions are based on [The Rust Book](https://doc.rust-lang.org/book/)
 
 ## API Design Guidelines
 
+### Documentation
+
+- Always update documentation when making changes to code, both readme if required and rustdocs.
+
 ### Common Traits Implementation
 Eagerly implement common traits where appropriate:
 - `Copy`, `Clone`, `Eq`, `PartialEq`, `Ord`, `PartialOrd`, `Hash`, `Debug`, `Display`, `Default`

@@ -1,7 +1,7 @@
 #![cfg(all(feature = "pardiso", not(target_arch = "wasm32")))]
-use std::error::Error;
-use lca_core::{DemandItem, LcaSystem};
 use lca_rs::EvalLCASystem;
+use lca_rs::core::{DemandItem, LcaSystem};
+use std::error::Error;
 
 mod shared;
 // use paths directly via `shared::...` to avoid unused import warnings
@@ -18,7 +18,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let lca_system = LcaSystem::combine(vec![ecoinvent_system, water_bottle_lca_system])?;
 
     let demand = vec![DemandItem::new(
-        "Water bottle LCA::Drinking water from a bottle|Drinking 1 liter from a water bottle".to_string(),
+        "Water bottle LCA::Drinking water from a bottle|Drinking 1 liter from a water bottle"
+            .to_string(),
         1.0,
     )];
 

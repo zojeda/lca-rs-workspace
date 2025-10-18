@@ -1,0 +1,17 @@
+[package]
+name = "lca-database"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+derive_more.workspace = true
+serde.workspace = true
+surrealdb = "2.3.3"
+uuid.workspace = true
+ecospold-parser = { path = "../ecospold-parser" }
+tokio.workspace = true
+chrono.workspace = true
+indicatif = { version = "0.17.11", features = ["tokio"] }
+serde_json.workspace = true
+itertools = "0.14.0"
+geo = { version = "0.30.0", features = ["use-serde"] }

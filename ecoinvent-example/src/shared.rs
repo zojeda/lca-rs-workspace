@@ -1,6 +1,10 @@
+use lca_rs::core::sparse_matrix::Triplete;
+use lca_rs::core::{LcaMatrix, LcaSystem, SparseMatrix};
+
+use lca_rs::model::{
+    Amount, DbImport, ExternalRef, InputItem, LcaModel, OutputItem, Process, Product, ProductRef,
+};
 use std::error::Error;
-use lca_core::{sparse_matrix::Triplete, LcaMatrix, LcaSystem, SparseMatrix};
-use lca_rs::model::{Amount, DbImport, ExternalRef, InputItem, LcaModel, OutputItem, Process, Product, ProductRef};
 
 pub fn create_water_botle_lca_system() -> Result<LcaSystem, Box<dyn Error>> {
     let model = LcaModel {
@@ -66,7 +70,10 @@ pub fn load_ecoinvent_lca_system() -> Result<LcaSystem, Box<dyn Error>> {
 }
 
 fn read_dim_ids(filename: &str, concat_columns: &[usize]) -> Result<Vec<String>, Box<dyn Error>> {
-    let mut rdr = csv::ReaderBuilder::new().delimiter(b';').has_headers(true).from_path(filename)?;
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(b';')
+        .has_headers(true)
+        .from_path(filename)?;
     let mut dim_ids = Vec::new();
     for result in rdr.records() {
         let record = result?;
@@ -80,8 +87,14 @@ fn read_dim_ids(filename: &str, concat_columns: &[usize]) -> Result<Vec<String>,
     Ok(dim_ids)
 }
 
-fn read_sparse_matrix(filename: &str, epsilon: Option<f64>) -> Result<SparseMatrix, Box<dyn Error>> {
-    let mut rdr = csv::ReaderBuilder::new().delimiter(b';').has_headers(true).from_path(filename)?;
+fn read_sparse_matrix(
+    filename: &str,
+    epsilon: Option<f64>,
+) -> Result<SparseMatrix, Box<dyn Error>> {
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(b';')
+        .has_headers(true)
+        .from_path(filename)?;
     let mut triplets = Vec::new();
     let mut max_row: usize = 0;
     let mut max_col: usize = 0;
@@ -96,8 +109,12 @@ fn read_sparse_matrix(filename: &str, epsilon: Option<f64>) -> Result<SparseMatr
         } else {
             triplets.push(Triplete::new(row_index, col_index, value));
         }
-        if row_index > max_row { max_row = row_index; }
-        if col_index > max_col { max_col = col_index; }
+        if row_index > max_row {
+            max_row = row_index;
+        }
+        if col_index > max_col {
+            max_col = col_index;
+        }
     }
     let num_rows = max_row + 1;
     let num_cols = max_col + 1;
@@ -106,8 +123,15 @@ fn read_sparse_matrix(filename: &str, epsilon: Option<f64>) -> Result<SparseMatr
 }
 
 #[allow(dead_code)]
-fn read_c_matrix(filename: &str, keep_rows: &[usize], num_cols: usize) -> Result<SparseMatrix, Box<dyn Error>> {
-    let mut rdr = csv::ReaderBuilder::new().delimiter(b';').has_headers(true).from_path(filename)?;
+fn read_c_matrix(
+    filename: &str,
+    keep_rows: &[usize],
+    num_cols: usize,
+) -> Result<SparseMatrix, Box<dyn Error>> {
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(b';')
+        .has_headers(true)
+        .from_path(filename)?;
     let mut triplets = Vec::new();
     let mut max_row: usize = 0;
     let mut max_col: usize = 0;
@@ -115,12 +139,21 @@ fn read_c_matrix(filename: &str, keep_rows: &[usize], num_cols: usize) -> Result
         let record = result?;
         let row_index_in_matrix: usize = record[0].parse()?;
         let col_index: usize = record[1].parse()?;
-        if !keep_rows.contains(&row_index_in_matrix) { continue; }
-        let row_index = keep_rows.iter().position(|&x| x == row_index_in_matrix).unwrap();
+        if !keep_rows.contains(&row_index_in_matrix) {
+            continue;
+        }
+        let row_index = keep_rows
+            .iter()
+            .position(|&x| x == row_index_in_matrix)
+            .unwrap();
         let value: f64 = record[2].parse()?;
         triplets.push(Triplete::new(row_index, col_index, value));
-        if row_index > max_row { max_row = row_index; }
-        if col_index > max_col { max_col = col_index; }
+        if row_index > max_row {
+            max_row = row_index;
+        }
+        if col_index > max_col {
+            max_col = col_index;
+        }
     }
     let num_rows = max_row + 1;
     let m = SparseMatrix::from_triplets(num_rows, num_cols, triplets)?;

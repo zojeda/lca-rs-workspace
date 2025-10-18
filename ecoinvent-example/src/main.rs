@@ -1,6 +1,6 @@
-use std::{error::Error, vec};
-use lca_core::{DemandItem, LcaSystem};
 use lca_rs::EvalLCASystem;
+use lca_rs::core::{DemandItem, LcaSystem};
+use std::{error::Error, vec};
 mod shared;
 use shared::{create_water_botle_lca_system, load_ecoinvent_lca_system};
 
@@ -18,27 +18,37 @@ async fn main() -> Result<(), Box<dyn Error>> {
     });
     println!("Water bottle LCA system loaded");
 
-    
     let ecoinvent_system = load_ecoinvent_lca_system()?;
     println!("EcoInvent system loaded");
 
     let lca_system = LcaSystem::combine(vec![ecoinvent_system, water_bottle_lca_system])?;
-    
-    println!("Combined A matrix: {:?}", lca_system.a_matrix().matrix().dims());
-    println!("Combined B matrix: {:?}", lca_system.b_matrix().matrix().dims());
-    println!("Combined C matrix: {:?}", lca_system.c_matrix().matrix().dims());
+
+    println!(
+        "Combined A matrix: {:?}",
+        lca_system.a_matrix().matrix().dims()
+    );
+    println!(
+        "Combined B matrix: {:?}",
+        lca_system.b_matrix().matrix().dims()
+    );
+    println!(
+        "Combined C matrix: {:?}",
+        lca_system.c_matrix().matrix().dims()
+    );
 
     for triplete in lca_system.a_matrix().matrix().iter() {
-        if triplete.row() >=  25412 {
+        if triplete.row() >= 25412 {
             println!("A matrix triplet: {:?}", triplete);
         }
     }
-    println!("B matrix row id 562: {:?}", lca_system.b_matrix().row_id(562));
-
-
+    println!(
+        "B matrix row id 562: {:?}",
+        lca_system.b_matrix().row_id(562)
+    );
 
     let demand = vec![DemandItem::new(
-        "Water bottle LCA::Drinking water from a bottle|Drinking 1 liter from a water bottle".to_string(),
+        "Water bottle LCA::Drinking water from a bottle|Drinking 1 liter from a water bottle"
+            .to_string(),
         1.0,
     )];
     let start_time = std::time::Instant::now();
@@ -52,9 +62,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "ecoinvent-3.11::EF v3.1|climate change: land use and land use change|global warming potential (GWP100)".to_string(),
       ]);
 
-    let lca_result = eval_system
-        .evaluate()
-        .await?;
+    let lca_result = eval_system.evaluate().await?;
     let elapsed_time = start_time.elapsed();
     println!("Elapsed time: {:?}", elapsed_time);
     println!("result length: {}", lca_result.len());

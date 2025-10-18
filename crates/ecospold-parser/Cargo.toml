@@ -1,0 +1,13 @@
+[package]
+name = "ecospold-parser"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde.workspace = true
+quick-xml = { version = "0.37", features = ["serialize", "overlapped-lists"] } # Correct feature for Serde support
+serde_json.workspace = true # Added again for flexible comment parsing
+derive_more.workspace = true

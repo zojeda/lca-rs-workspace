@@ -1,0 +1,58 @@
+{
+  "database_name": "Bike Example DB",
+  "case_name": "Bike Production",
+  "case_description": "LCA for bike production",
+  "imported_dbs": [],
+  "processes": [
+    {
+      "name": "P1",
+      "products": [
+        {"product": {"name": "Bike"}, "amount": {"Literal": 1.0}, "unit": "bike"}
+      ],
+      "inputs": [],
+      "emissions": [],
+      "resources": []
+    },
+    {
+      "name": "Carbon fibre DE",
+      "products": [
+      {"product": {"name": "Carbon fibre DE"}, "amount": {"Literal": 1.0}, "unit": "kg"}
+      ],
+      "inputs": [
+      {"product": {"Product": "Natural gas NO|Natural gas NO"}, "amount": {"Literal": 237.0}, "unit": "MJ"}
+      ],
+      "emissions": [
+      {"substance": {"Substance": "CO2"}, "amount": {"Literal": 26.6}, "unit": "kg", "compartment": null}
+      ],
+      "resources": []
+    },
+    {
+      "name": "Natural gas NO",
+      "products": [
+      {"product": {"name": "Natural gas NO"}, "amount": {"Literal": 1.0}, "unit": "MJ"}
+      ],
+      "inputs": [],
+      "emissions": [],
+      "resources": []
+    }
+  ],
+  "substances": [
+    {
+      "name": "CO2",
+      "type": "Emission",
+      "reference_unit": "kg",
+      "impacts": [
+        {
+          "name": "GWP100",
+          "amount": {
+            "Literal": 1.0
+          },
+          "unit": "kg CO2e"
+        }
+      ]
+
+    }
+  ],
+  "evaluation_demands": [[{"product": "P1|Bike", "amount": 1.0}]],
+  "evaluation_impacts": [{"Impact": "GWP100"}]
+}

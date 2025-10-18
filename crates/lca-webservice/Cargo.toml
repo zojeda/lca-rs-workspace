@@ -1,0 +1,57 @@
+[package]
+name = "lca-webservice"
+version.workspace = true
+edition.workspace = true # Using workspace edition
+
+[lib]
+name = "lca_webservice"
+path = "src/lib.rs"
+
+[dependencies]
+axum = { version = "0.8", features = ["json", "macros"] }
+tokio = { version = "1", features = ["full"] }
+serde.workspace = true
+serde_json.workspace = true
+
+# OpenAPI & Swagger UI
+utoipa = { version = "5.3.1", features = ["axum_extras", "preserve_order", "chrono"] }
+utoipa-swagger-ui = { version = "9.0.1", features = ["axum", "vendored", "debug-embed"] }
+
+# Server-Sent Events
+axum-streams.workspace = true
+futures.workspace = true # For stream utilities
+
+# HTTP Utilities & Middleware
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# LCA Core Logic (Path dependencies)
+lca-rs = { path = "../lca-rs" }
+
+# Input Validation
+validator.workspace = true
+
+# Stream utilities
+tokio-stream = { version = "0.1", features = ["sync"] } # For ReceiverStream
+
+# Logging & Tracing
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-log.workspace = true # Bridges 'log' crate events to 'tracing'
+log.workspace = true # To align with lca-rs if it uses a specific version, and for tracing-log
+
+# Error Handling
+thiserror.workspace = true
+axum-extra = { version = "0.10.1", features = ["typed-header"] }
+
+# For wasm_bindgen types if they appear in lca-rs public API and we need to handle them
+# wasm-bindgen = { version = "0.2", optional = true } # Only if strictly needed
+
+[dev-dependencies]
+# Add any development-specific dependencies here, e.g., for integration tests
+reqwest.workspace = true
+tokio-stream.workspace = true
+
+[features]
+default = []
+# Enable CPU PARDISO solver path via lca-rs feature forwarding
+pardiso = ["lca-rs/pardiso"]
